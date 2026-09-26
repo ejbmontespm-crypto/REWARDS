@@ -1,0 +1,15 @@
+{
+  "name": "lealtad-cafe-panel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Panel de control — SPA vanilla JS servida por Express (ver fase2-panel-control.md).",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

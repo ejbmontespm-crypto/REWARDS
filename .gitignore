@@ -1,0 +1,30 @@
+# Dependencias (cada subproyecto tiene las suyas)
+node_modules/
+
+# Secretos — nunca se suben (cada quien configura su propio .env en el
+# hosting real; ver backend/.env.example para saber qué necesita)
+.env
+.env.*
+!.env.example
+
+# Logs y PIDs de procesos locales (dev)
+*.log
+*.pid
+
+# Expo / app-cliente
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+.metro-health-check*
+/app-cliente/ios
+/app-cliente/android
+
+# Sistema
+.DS_Store
+Thumbs.db
