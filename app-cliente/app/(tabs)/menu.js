@@ -5,6 +5,8 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useCarrito } from "../../lib/contextoCarrito";
 import { useTema } from "../../lib/contextoTema";
+import { mostrarToast } from "../../lib/toast";
+import { radios, tipografia, sombra } from "../../constants/theme";
 
 const DIAS_SEMANA_CORTO = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
@@ -52,6 +54,19 @@ export default function Menu() {
 
   const puedeOrdenar = elegibilidad?.pedidos_en_linea_activos_global && elegibilidad?.dentro_de_horario && elegibilidad?.elegible;
 
+  // Auditoría UX punto 5: si el producto no tiene extras, abrir un modal
+  // solo para elegir cantidad=1 y confirmar es fricción de más — se agrega
+  // directo y se avisa con un toast, igual que cualquier app de delivery.
+  function tocarProducto(p) {
+    if (!puedeOrdenar || !p.disponible) return;
+    if (p.tiene_extras) {
+      setProductoAbierto(p);
+    } else {
+      agregar({ producto_id: p.id, nombre: p.nombre, precio_unitario: Number(p.precio), cantidad: 1, extras: [] });
+      mostrarToast(`✓ ${p.nombre} agregado al carrito`);
+    }
+  }
+
   if (cargando) {
     return (
       <View style={estilos.centro}>
@@ -93,8 +108,12 @@ export default function Menu() {
               {productosCategoria.map((p) => (
                 <Pressable
                   key={p.id}
-                  style={[estilos.tarjetaProducto, !p.disponible && estilos.tarjetaAgotada]}
-                  onPress={() => puedeOrdenar && p.disponible && setProductoAbierto(p)}
+                  style={({ pressed }) => [
+                    estilos.tarjetaProducto,
+                    !p.disponible && estilos.tarjetaAgotada,
+                    pressed && estilos.tarjetaPresionada,
+                  ]}
+                  onPress={() => tocarProducto(p)}
                   disabled={!puedeOrdenar || !p.disponible}
                 >
                   <View style={{ flex: 1 }}>
@@ -112,7 +131,10 @@ export default function Menu() {
       </ScrollView>
 
       {items.length > 0 ? (
-        <Pressable style={estilos.botonCarrito} onPress={() => router.push("/carrito")}>
+        <Pressable
+          style={({ pressed }) => [estilos.botonCarrito, pressed && estilos.botonCarritoPresionado]}
+          onPress={() => router.push("/carrito")}
+        >
           <Text style={estilos.textoBotonCarrito}>Ver carrito ({items.reduce((s, i) => s + i.cantidad, 0)})</Text>
         </Pressable>
       ) : null}
@@ -160,6 +182,7 @@ function ModalProducto({ producto, onCerrar, onAgregar, colores, estilos }) {
       cantidad,
       extras: extrasSeleccionados.map((e) => ({ id: e.id, nombre: e.nombre, costo: Number(e.costo) })),
     });
+    mostrarToast(`✓ ${producto.nombre} agregado al carrito`);
     onCerrar();
   }
 
@@ -217,15 +240,34 @@ function crearEstilos(colores) {
     error: { color: colores.peligro, fontSize: 13, padding: 16 },
     banner: { backgroundColor: "#fff7e6", borderBottomWidth: 1, borderColor: "#f0dba9", padding: 14 },
     bannerTexto: { fontSize: 12.5, color: colores.texto },
-    tituloCategoria: { fontSize: 15, fontWeight: "700", color: colores.texto },
-    tarjetaProducto: { flexDirection: "row", backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 14, alignItems: "center" },
+    tituloCategoria: { fontSize: tipografia.md, fontWeight: "700", color: colores.texto },
+    tarjetaProducto: {
+      flexDirection: "row",
+      backgroundColor: colores.superficie,
+      borderRadius: radios.medio,
+      padding: 14,
+      alignItems: "center",
+      ...sombra.suave,
+    },
+    tarjetaPresionada: { opacity: 0.85, transform: [{ scale: 0.98 }] },
     tarjetaAgotada: { opacity: 0.5 },
     nombreProducto: { fontSize: 14.5, fontWeight: "600", color: colores.texto },
     descripcionProducto: { fontSize: 12, color: colores.textoMuted, marginTop: 2 },
-    ventanaTexto: { fontSize: 11, color: colores.acento, fontWeight: "600", marginTop: 3 },
+    ventanaTexto: { fontSize: tipografia.xs, color: colores.acento, fontWeight: "600", marginTop: 3 },
     agotadoTexto: { fontSize: 11.5, color: colores.peligro, marginTop: 3, fontWeight: "600" },
     precioProducto: { fontSize: 14.5, fontWeight: "700", color: colores.texto },
-    botonCarrito: { position: "absolute", bottom: 20, left: 20, right: 20, backgroundColor: colores.acento, borderRadius: 12, paddingVertical: 15, alignItems: "center" },
+    botonCarrito: {
+      position: "absolute",
+      bottom: 20,
+      left: 20,
+      right: 20,
+      backgroundColor: colores.acento,
+      borderRadius: radios.medio,
+      paddingVertical: 15,
+      alignItems: "center",
+      ...sombra.media,
+    },
+    botonCarritoPresionado: { transform: [{ scale: 0.97 }] },
     textoBotonCarrito: { color: "#fff", fontWeight: "700", fontSize: 15 },
 
     overlayModal: { flex: 1, backgroundColor: "rgba(32,30,26,0.4)", justifyContent: "flex-end" },

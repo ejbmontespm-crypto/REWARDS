@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from "react-native";
 import { SessionProvider, useSession } from "../lib/contextoSesion";
 import { CarritoProvider } from "../lib/contextoCarrito";
 import { TemaProvider, useTema } from "../lib/contextoTema";
+import ToastHost from "../components/ToastHost";
 
 export default function RootLayout() {
   return (
@@ -14,6 +15,7 @@ export default function RootLayout() {
           <CarritoProvider>
             <StatusBar style="dark" />
             <RootNavigator />
+            <ToastHost />
           </CarritoProvider>
         </SessionProvider>
       </TemaProvider>
@@ -33,18 +35,24 @@ function RootNavigator() {
     );
   }
 
+  const opcionesHeaderTema = {
+    headerStyle: { backgroundColor: colores.superficie },
+    headerTintColor: colores.texto,
+    headerTitleStyle: { color: colores.texto },
+  };
+
   return (
     <Stack>
       <Stack.Protected guard={sesion?.tipo === "cliente"}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="mi-qr" options={{ presentation: "fullScreenModal", headerShown: false }} />
-        <Stack.Screen name="notificaciones" options={{ presentation: "modal", title: "Notificaciones" }} />
-        <Stack.Screen name="pedido/[id]" options={{ title: "Tu pedido" }} />
+        <Stack.Screen name="notificaciones" options={{ presentation: "modal", title: "Notificaciones", ...opcionesHeaderTema }} />
+        <Stack.Screen name="pedido/[id]" options={{ title: "Tu pedido", ...opcionesHeaderTema }} />
         <Stack.Screen name="promocion/[id]" options={{ presentation: "modal", headerShown: false }} />
       </Stack.Protected>
       <Stack.Protected guard={sesion?.tipo === "staff"}>
         <Stack.Screen name="(staff)" options={{ headerShown: false }} />
-        <Stack.Screen name="staff-buscar" options={{ title: "Buscar cliente" }} />
+        <Stack.Screen name="staff-buscar" options={{ title: "Buscar cliente", ...opcionesHeaderTema }} />
       </Stack.Protected>
       <Stack.Protected guard={!sesion}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

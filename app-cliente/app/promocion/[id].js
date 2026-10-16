@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
 import { useCarrito } from "../../lib/contextoCarrito";
+import { mostrarToast } from "../../lib/toast";
 
 export default function DetallePromocion() {
   const { id } = useLocalSearchParams();
@@ -66,6 +67,7 @@ export default function DetallePromocion() {
                   cantidad: 1,
                   extras: [],
                 });
+                mostrarToast(`✓ ${promo.titulo} agregado al carrito`);
                 router.push("/carrito");
               }}
             >

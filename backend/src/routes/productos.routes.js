@@ -16,7 +16,11 @@ productosRouter.get(
     const condiciones = soloDisponibles ? "where p.disponible = true" : "";
     const { rows } = await query(
       `select p.id, p.nombre, p.descripcion, p.precio, p.disponible, p.imagen_path,
-              c.id as categoria_id, c.nombre as categoria_nombre
+              c.id as categoria_id, c.nombre as categoria_nombre,
+              exists(
+                select 1 from producto_extras pe join extras e on e.id = pe.extra_id
+                where pe.producto_id = p.id and e.disponible = true
+              ) as tiene_extras
        from productos p
        left join categorias_producto c on c.id = p.categoria_id
        ${condiciones}

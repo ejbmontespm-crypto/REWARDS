@@ -19,3 +19,28 @@ export const colores = {
   exito: "#15803d",
   peligro: "#b3261e",
 };
+
+/**
+ * Tokens de diseño fijos (NO configurables desde el panel — a diferencia de
+ * `colores`, esto es maquetación pura). Antes cada pantalla inventaba sus
+ * propios radios/tamaños de fuente sueltos (8, 10, 12, 14, 16, 20, 24... sin
+ * ningún patrón), lo que hacía que la app se sintiera "hecha a mano" en vez
+ * de un sistema. Auditoría UX, punto 1.
+ */
+export const radios = { chico: 8, medio: 14, grande: 20 };
+
+export const tipografia = {
+  xs: 11, // fechas, pies de página
+  sm: 12.5, // subtítulos, textos muted
+  base: 14, // cuerpo de texto normal
+  md: 16, // títulos de tarjeta
+  lg: 20, // títulos de pantalla
+  xl: 26, // cifras destacadas (saldo, totales grandes)
+};
+
+/** Dos niveles nada más — "suave" para tarjetas de contenido, "media" para
+ *  elementos que de verdad flotan sobre todo (botones flotantes, modales). */
+export const sombra = {
+  suave: { elevation: 2, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+  media: { elevation: 5, shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+};

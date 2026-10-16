@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, TextInput } from "react-native";
 import { api, ApiError } from "../lib/api";
 import { useTema } from "../lib/contextoTema";
+import { ETIQUETA_PASO_PEDIDO } from "./PedidoProgreso";
 
 const ETIQUETA_PERFIL = { alumno: "Alumno", docente: "Docente", otro: "Otro" };
 
@@ -154,13 +155,23 @@ export default function ResultadoCliente({ resultado, config, onVolver, textoVol
 
       {pedidos.map((p) => (
         <View key={p.id} style={estilos.tarjeta}>
-          <Text style={estilos.tituloTarjeta}>Pedido pendiente</Text>
+          <View style={estilos.filaTituloPedido}>
+            <Text style={estilos.tituloTarjeta}>Pedido pendiente</Text>
+            <Text style={estilos.estadoPedidoTexto}>{ETIQUETA_PASO_PEDIDO[p.estado] || p.estado}</Text>
+          </View>
+          {p.items?.length ? (
+            <Text style={estilos.detalleTarjeta}>{p.items.map((i) => `${i.cantidad}× ${i.producto_nombre}`).join(", ")}</Text>
+          ) : null}
           <Text style={estilos.detalleTarjeta}>
             Total ${Number(p.total_mxn).toFixed(0)} — pickup {new Date(p.hora_pickup).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
           </Text>
-          <Pressable style={estilos.botonAccion} onPress={() => marcarEntregado(p)} disabled={accionando === `pedido-${p.id}`}>
-            {accionando === `pedido-${p.id}` ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBoton}>Marcar como entregado</Text>}
-          </Pressable>
+          {p.estado === "listo" ? (
+            <Pressable style={estilos.botonAccion} onPress={() => marcarEntregado(p)} disabled={accionando === `pedido-${p.id}`}>
+              {accionando === `pedido-${p.id}` ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBoton}>Marcar como entregado</Text>}
+            </Pressable>
+          ) : (
+            <Text style={estilos.avisoNoListo}>Todavía no está listo — no se puede entregar.</Text>
+          )}
         </View>
       ))}
 
@@ -275,8 +286,11 @@ function crearEstilos(colores) {
     filaMovimiento: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2 },
     movimientoTexto: { fontSize: 12, color: colores.textoMuted },
     linkCorregir: { fontSize: 11.5, color: colores.acento, fontWeight: "600" },
+    filaTituloPedido: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     tituloTarjeta: { fontSize: 14, fontWeight: "600", color: colores.texto },
+    estadoPedidoTexto: { fontSize: 12, fontWeight: "700", color: colores.acento },
     detalleTarjeta: { fontSize: 13, color: colores.textoMuted },
+    avisoNoListo: { fontSize: 12.5, color: colores.textoMuted, fontStyle: "italic", marginTop: 4 },
     botonAccion: { backgroundColor: colores.acento, borderRadius: 8, paddingVertical: 12, alignItems: "center", marginTop: 4 },
     inputMonto: { backgroundColor: colores.fondo, borderWidth: 1, borderColor: colores.borde, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
     filaProductos: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

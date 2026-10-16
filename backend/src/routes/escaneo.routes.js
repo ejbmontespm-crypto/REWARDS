@@ -25,9 +25,13 @@ async function resolverResultadoCliente(clienteId) {
 
   const [pedidosPendientes, solicitudesPendientes, ultimosMovimientos] = await Promise.all([
     query(
-      `select id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn
-       from pedidos where cliente_id = $1 and estado in ('recibido', 'preparando', 'listo')
-       order by hora_pickup`,
+      `select p.id, p.estado, p.hora_pickup, p.total_mxn, p.creditos_aplicados_mxn,
+              coalesce((select sum(cantidad) from pedido_items where pedido_id = p.id), 0) as cantidad_productos,
+              (select json_agg(json_build_object('cantidad', pi.cantidad, 'producto_nombre', pr.nombre))
+                 from pedido_items pi join productos pr on pr.id = pi.producto_id
+                 where pi.pedido_id = p.id) as items
+       from pedidos p where p.cliente_id = $1 and p.estado in ('recibido', 'preparando', 'listo')
+       order by p.hora_pickup`,
       [cliente.id]
     ),
     query(

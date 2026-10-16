@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useCarrito } from "../../lib/contextoCarrito";
 import { useTema } from "../../lib/contextoTema";
+import { radios, sombra } from "../../constants/theme";
 
 function generarSlots(pickupInmediato) {
   const slots = [];
@@ -37,6 +38,7 @@ export default function Carrito() {
   const [promosVentana, setPromosVentana] = useState({});
   const [slotElegido, setSlotElegido] = useState(null);
   const [aplicarCreditos, setAplicarCreditos] = useState(false);
+  const [metodoPago, setMetodoPago] = useState("caja"); // "caja" | "mercadopago"
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState("");
 
@@ -77,9 +79,23 @@ export default function Carrito() {
         items: items.map((i) => ({ producto_id: i.producto_id, cantidad: i.cantidad, extra_ids: i.extras.map((e) => e.id) })),
         hora_pickup: slotElegido.toISOString(),
         creditos_aplicados_mxn: creditosAplicadosMxn || undefined,
+        metodo_pago: metodoPago === "mercadopago" ? "liga_mp" : "caja",
       });
       vaciar();
-      router.replace(`/pedido/${pedido.id}`);
+
+      if (metodoPago === "mercadopago") {
+        try {
+          const { url } = await api.post(`/pagos/mercadopago/liga/${pedido.id}`, {});
+          await Linking.openURL(url);
+        } catch {
+          // El pedido ya se creó — no se pierde. Si la liga falla aquí, el
+          // botón de pago sigue disponible en el detalle del pedido para reintentar.
+        }
+      }
+
+      // push (no replace): así queda "Carrito" debajo en la pila y se puede
+      // volver — con replace se perdía por completo la barra de pestañas.
+      router.push(`/pedido/${pedido.id}`);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo confirmar el pedido.");
     } finally {
@@ -148,18 +164,51 @@ export default function Carrito() {
             </Pressable>
           ) : null}
 
+          {porPagarEnCaja > 0 ? (
+            <View style={estilos.selectorPago}>
+              <Text style={estilos.seccionTitulo}>¿Cómo vas a pagar?</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Pressable
+                  style={[estilos.chipPago, metodoPago === "caja" && estilos.chipPagoActivo]}
+                  onPress={() => setMetodoPago("caja")}
+                >
+                  <Text style={[estilos.textoChip, metodoPago === "caja" && estilos.textoChipActivo]}>Pagar en caja</Text>
+                </Pressable>
+                <Pressable
+                  style={[estilos.chipPago, metodoPago === "mercadopago" && estilos.chipPagoActivo]}
+                  onPress={() => setMetodoPago("mercadopago")}
+                >
+                  <Text style={[estilos.textoChip, metodoPago === "mercadopago" && estilos.textoChipActivo]}>Mercado Pago</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
+
           <View style={estilos.resumen}>
             <FilaResumen estilos={estilos} etiqueta="Total" valor={total} />
             {creditosAplicadosMxn > 0 ? <FilaResumen estilos={estilos} etiqueta="Cubierto con créditos" valor={-creditosAplicadosMxn} /> : null}
-            <FilaResumen estilos={estilos} etiqueta="Por pagar en caja" valor={porPagarEnCaja} destacado />
+            <FilaResumen
+              estilos={estilos}
+              etiqueta={porPagarEnCaja <= 0 ? "Cubierto con créditos" : metodoPago === "mercadopago" ? "Por pagar en línea" : "Por pagar en caja"}
+              valor={porPagarEnCaja}
+              destacado
+            />
           </View>
 
           <Text style={estilos.aviso}>Si no recoges tu pedido, se aplica una penalización a tu saldo/avance.</Text>
 
           {error ? <Text style={estilos.error}>{error}</Text> : null}
 
-          <Pressable style={estilos.botonConfirmar} onPress={confirmar} disabled={enviando}>
-            {enviando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBoton}>Confirmar pedido</Text>}
+          <Pressable
+            style={({ pressed }) => [estilos.botonConfirmar, pressed && estilos.botonPresionado]}
+            onPress={confirmar}
+            disabled={enviando}
+          >
+            {enviando ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={estilos.textoBoton}>{metodoPago === "mercadopago" && porPagarEnCaja > 0 ? "Confirmar y pagar" : "Confirmar pedido"}</Text>
+            )}
           </Pressable>
         </>
       ) : null}
@@ -182,7 +231,7 @@ function crearEstilos(colores) {
     contenedor: { flex: 1, backgroundColor: colores.fondo },
     titulo: { fontSize: 18, fontWeight: "700", color: colores.texto },
     vacio: { textAlign: "center", color: colores.textoMuted, marginTop: 40 },
-    itemFila: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 12 },
+    itemFila: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colores.superficie, borderRadius: radios.medio, padding: 12, ...sombra.suave },
     itemNombre: { fontSize: 14, fontWeight: "600", color: colores.texto },
     itemExtras: { fontSize: 11.5, color: colores.textoMuted, marginTop: 2 },
     itemPrecio: { fontSize: 13, color: colores.texto, marginTop: 4 },
@@ -193,6 +242,9 @@ function crearEstilos(colores) {
     separador: { height: 1, backgroundColor: colores.borde },
     seccionTitulo: { fontSize: 14, fontWeight: "600", color: colores.texto },
     notaVentana: { fontSize: 12, color: colores.acento, fontWeight: "500", lineHeight: 17 },
+    selectorPago: { gap: 8 },
+    chipPago: { flex: 1, borderWidth: 1, borderColor: colores.borde, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+    chipPagoActivo: { backgroundColor: colores.acento, borderColor: colores.acento },
     chipSlot: { borderWidth: 1, borderColor: colores.borde, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
     chipSlotActivo: { backgroundColor: colores.acento, borderColor: colores.acento },
     textoChip: { fontSize: 13, color: colores.texto },
@@ -205,7 +257,8 @@ function crearEstilos(colores) {
     resumenDestacado: { fontSize: 15, fontWeight: "700", color: colores.texto },
     aviso: { fontSize: 12, color: colores.textoMuted, fontStyle: "italic" },
     error: { color: colores.peligro, fontSize: 13 },
-    botonConfirmar: { backgroundColor: colores.acento, borderRadius: 10, paddingVertical: 15, alignItems: "center" },
+    botonConfirmar: { backgroundColor: colores.acento, borderRadius: radios.medio, paddingVertical: 15, alignItems: "center", ...sombra.media },
+    botonPresionado: { opacity: 0.9, transform: [{ scale: 0.98 }] },
     textoBoton: { color: "#fff", fontWeight: "700", fontSize: 15 },
   });
 }

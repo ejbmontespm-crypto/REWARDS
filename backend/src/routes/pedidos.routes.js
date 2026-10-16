@@ -8,6 +8,7 @@ import { obtenerConfig } from "../lib/config.js";
 import { exportarXlsx } from "../lib/exportarExcel.js";
 import { inicioDeHoyMexicoUTC } from "../lib/recompensa.js";
 import { promoDentroDeVentana, promoExigePickupInmediato } from "../lib/promoHorario.js";
+import { notificarClientesPorId } from "../lib/notificar.js";
 
 export const pedidosRouter = Router();
 
@@ -86,10 +87,14 @@ pedidosRouter.post(
   requireClienteAuth,
   asyncHandler(async (req, res) => {
     const cliente_id = req.cliente.id;
-    const { items, hora_pickup, creditos_aplicados_mxn } = req.body || {};
+    const { items, hora_pickup, creditos_aplicados_mxn, metodo_pago } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) throw badRequest("El carrito no puede venir vacío");
     if (!hora_pickup || Number.isNaN(Date.parse(hora_pickup))) throw badRequest("hora_pickup inválida");
+    // La forma de pago se fija desde que se crea el pedido — no se puede
+    // "cambiar de opinión" después (plan §7.1 ampliado): si se eligió pagar
+    // en caja, el botón de Mercado Pago nunca aparece para ese pedido.
+    if (metodo_pago && !["caja", "liga_mp"].includes(metodo_pago)) throw badRequest('metodo_pago debe ser "caja" o "liga_mp"');
     if (new Date(hora_pickup) <= new Date()) throw badRequest("hora_pickup debe ser en el futuro");
 
     const elegibilidad = await calcularElegibilidadPedidos(cliente_id);
@@ -185,9 +190,9 @@ pedidosRouter.post(
       await client.query("begin");
 
       const { rows: pedidoRows } = await client.query(
-        `insert into pedidos (cliente_id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn)
-         values ($1, 'recibido', $2, $3, $4) returning *`,
-        [cliente_id, hora_pickup, totalMxn, creditosAplicados]
+        `insert into pedidos (cliente_id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn, metodo_pago)
+         values ($1, 'recibido', $2, $3, $4, $5) returning *`,
+        [cliente_id, hora_pickup, totalMxn, creditosAplicados, metodo_pago || "caja"]
       );
       const pedido = pedidoRows[0];
 
@@ -324,7 +329,10 @@ pedidosRouter.patch(
       throw badRequest('estado debe ser "preparando" o "listo" — "entregado" se confirma en el escaneo, no aquí');
     }
 
-    const { rows } = await query(`select estado from pedidos where id = $1`, [req.params.id]);
+    const { rows } = await query(
+      `select p.estado, p.cliente_id, c.correo from pedidos p join clientes c on c.id = p.cliente_id where p.id = $1`,
+      [req.params.id]
+    );
     const pedido = rows[0];
     if (!pedido) throw notFound("Pedido no encontrado");
     if (ESTADOS_FINALES.includes(pedido.estado)) {
@@ -335,6 +343,20 @@ pedidosRouter.patch(
       `update pedidos set estado = $2, updated_at = now() where id = $1 returning *`,
       [req.params.id, estado]
     );
+
+    // Bandeja de notificaciones del cliente (fase A, ronda 6) — el disparador
+    // ya existía (lib/notificar.js) pero nunca se conectó a los eventos de
+    // pedido, así que la pestaña "Notificaciones" del cliente se quedaba
+    // vacía para esto (solo se llenaba con promos). "Preparando" no avisa a
+    // propósito (no aporta), solo "listo" — es el momento que sí importa.
+    if (estado === "listo") {
+      notificarClientesPorId([{ id: pedido.cliente_id, correo: pedido.correo }], {
+        tipo: "pedido_listo",
+        asunto: "Tu pedido está listo",
+        texto: "¡Tu pedido está listo para recoger! Muéstrale tu QR al staff en caja.",
+      }).catch(() => {});
+    }
+
     res.json({ pedido: updRows[0] });
   })
 );

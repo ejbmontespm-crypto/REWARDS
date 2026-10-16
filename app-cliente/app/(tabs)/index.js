@@ -1,13 +1,16 @@
-import { useCallback, useMemo, useState } from "react";
-import { View, Text, Image, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, Text, Image, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Dimensions, Animated, Vibration } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
 import Logo from "../../components/Logo";
 import PedidoProgreso, { ETIQUETA_PASO_PEDIDO } from "../../components/PedidoProgreso";
+import { radios, tipografia, sombra } from "../../constants/theme";
 
 const TAMANO_CROISSANT = 110;
+const ANCHO_TARJETA_PEDIDO = Dimensions.get("window").width - 40; // 40 = padding de 20 a cada lado del ScrollView de Inicio
 
 /** Croissant que se va llenando — progreso de la RECOMPENSA de lealtad (las
  *  3 modalidades), independiente de las tazas (esas son del PEDIDO). Mismo
@@ -82,6 +85,10 @@ export default function Inicio() {
   const [refrescando, setRefrescando] = useState(false);
   const [error, setError] = useState("");
   const [redimiendo, setRedimiendo] = useState(false);
+  const [paginaPedido, setPaginaPedido] = useState(0);
+  const escalaQr = useRef(new Animated.Value(1)).current;
+  const escalaCelebracion = useRef(new Animated.Value(1)).current;
+  const recompensaListaAnterior = useRef(false);
 
   const cargar = useCallback(async (esRefresh) => {
     esRefresh ? setRefrescando(true) : setCargando(true);
@@ -103,11 +110,43 @@ export default function Inicio() {
     }
   }, []);
 
+  // Refresco silencioso de fondo — sin esto, el estatus de "Tus pedidos en
+  // curso" solo se veía actualizado al salir y volver a entrar a Inicio
+  // (useFocusEffect solo corre al enfocar la pestaña, no mientras ya está
+  // abierta). No toca cargando/refrescando para no parpadear la pantalla.
+  const revisarPedidosSilencioso = useCallback(async () => {
+    try {
+      const me = await api.get("/clientes/me");
+      setDatos(me);
+    } catch {
+      /* se reintenta en el siguiente ciclo */
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       cargar(false);
-    }, [cargar])
+      const intervalo = setInterval(revisarPedidosSilencioso, 10000);
+      return () => clearInterval(intervalo);
+    }, [cargar, revisarPedidosSilencioso])
   );
+
+  // Auditoría UX punto 4: el momento en que la recompensa se pone lista es
+  // EL momento emocional del programa de lealtad — antes solo cambiaba un
+  // texto, sin ningún aviso. Un pop + vibración corta, una sola vez (no en
+  // cada refresco mientras siga lista), para no ser molesto.
+  useEffect(() => {
+    if (datos?.recompensa_lista && !recompensaListaAnterior.current) {
+      Vibration.vibrate([0, 60, 60, 60]);
+      escalaCelebracion.setValue(0.85);
+      Animated.spring(escalaCelebracion, { toValue: 1, useNativeDriver: true, friction: 4, tension: 60 }).start();
+    }
+    recompensaListaAnterior.current = Boolean(datos?.recompensa_lista);
+  }, [datos?.recompensa_lista, escalaCelebracion]);
+
+  function presionarQr(hacia) {
+    Animated.spring(escalaQr, { toValue: hacia, useNativeDriver: true, friction: 5 }).start();
+  }
 
   async function redimir() {
     setRedimiendo(true);
@@ -139,23 +178,30 @@ export default function Inicio() {
     >
       <View style={estilos.encabezado}>
         <Text style={estilos.saludo}>Hola, {datos?.cliente?.nombre}</Text>
-        <Pressable onPress={() => router.push("/notificaciones")}>
-          <Text style={estilos.campana}>🔔</Text>
+        <Pressable style={({ pressed }) => pressed && { opacity: 0.6 }} onPress={() => router.push("/notificaciones")}>
+          <Ionicons name="notifications-outline" size={24} color={colores.texto} />
         </Pressable>
       </View>
 
       {error ? <Text style={estilos.error}>{error}</Text> : null}
 
-      <Pressable style={estilos.botonQr} onPress={() => router.push("/mi-qr")}>
-        {logoQrUrl ? (
-          <Image source={{ uri: logoQrUrl }} style={estilos.imagenBotonQr} resizeMode="cover" />
-        ) : (
-          <>
-            <Logo url={logoUrl} width={48} />
-            <Text style={estilos.textoBotonQr}>Mi QR</Text>
-          </>
-        )}
-      </Pressable>
+      <Animated.View style={[estilos.botonQrSombra, { transform: [{ scale: escalaQr }] }]}>
+        <Pressable
+          style={[estilos.botonQr, !logoQrUrl && estilos.botonQrFondo]}
+          onPressIn={() => presionarQr(0.95)}
+          onPressOut={() => presionarQr(1)}
+          onPress={() => router.push("/mi-qr")}
+        >
+          {logoQrUrl ? (
+            <Image source={{ uri: logoQrUrl }} style={estilos.imagenBotonQr} resizeMode="cover" />
+          ) : (
+            <>
+              <Logo url={logoUrl} width={48} />
+              <Text style={estilos.textoBotonQr}>Mi QR</Text>
+            </>
+          )}
+        </Pressable>
+      </Animated.View>
 
       <View style={estilos.tarjetaSaldo}>
         {progreso && croissantGrisUrl && croissantDoradoUrl ? (
@@ -179,22 +225,63 @@ export default function Inicio() {
           <Text style={estilos.bannerTexto}>Listo — muéstrale esto al staff en caja para recoger tu recompensa.</Text>
         </View>
       ) : datos?.recompensa_lista ? (
-        <View style={estilos.bannerRecompensa}>
-          <Text style={estilos.bannerTexto}>¡Tienes una recompensa lista para redimir!</Text>
-          <Pressable style={estilos.botonRedimir} onPress={redimir} disabled={redimiendo}>
+        <Animated.View style={[estilos.bannerRecompensa, { transform: [{ scale: escalaCelebracion }] }]}>
+          <Text style={estilos.bannerTexto}>🎉 ¡Tienes una recompensa lista para redimir!</Text>
+          <Pressable
+            style={({ pressed }) => [estilos.botonRedimir, pressed && estilos.botonPresionado]}
+            onPress={redimir}
+            disabled={redimiendo}
+          >
             {redimiendo ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBotonRedimir}>Redimir</Text>}
           </Pressable>
-        </View>
+        </Animated.View>
       ) : null}
 
-      {datos?.pedido_en_curso ? (
-        <Pressable style={estilos.tarjetaPedido} onPress={() => router.push(`/pedido/${datos.pedido_en_curso.id}`)}>
-          <Text style={estilos.pedidoTitulo}>Pedido en curso</Text>
-          <PedidoProgreso estado={datos.pedido_en_curso.estado} tamanoTaza={26} />
-          <Text style={estilos.pedidoEstado}>Estado: {ETIQUETA_PASO_PEDIDO[datos.pedido_en_curso.estado] || datos.pedido_en_curso.estado}</Text>
-          <Text style={estilos.pedidoSub}>Toca para ver el detalle</Text>
-        </Pressable>
-      ) : null}
+      <View style={{ gap: 8 }}>
+        <Text style={estilos.seccionTitulo}>Tus pedidos en curso</Text>
+
+        {datos?.pedidos_en_curso?.length ? (
+          <>
+            <ScrollView
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(ev) => setPaginaPedido(Math.round(ev.nativeEvent.contentOffset.x / ANCHO_TARJETA_PEDIDO))}
+            >
+              {datos.pedidos_en_curso.map((p) => (
+                <Pressable
+                  key={p.id}
+                  style={({ pressed }) => [estilos.tarjetaPedido, { width: ANCHO_TARJETA_PEDIDO }, pressed && estilos.tarjetaPresionada]}
+                  onPress={() => router.push(`/pedido/${p.id}`)}
+                >
+                  {p.items?.length ? (
+                    <Text style={estilos.pedidoItems}>{p.items.map((i) => `${i.cantidad}× ${i.producto_nombre}`).join(", ")}</Text>
+                  ) : null}
+                  <Text style={estilos.pedidoResumen}>Total: ${Number(p.total_mxn).toFixed(0)}</Text>
+                  <PedidoProgreso estado={p.estado} tamanoTaza={26} />
+                  <Text style={estilos.pedidoEstado}>Estado: {ETIQUETA_PASO_PEDIDO[p.estado] || p.estado}</Text>
+                  <Text style={estilos.pedidoSub}>Toca para ver el detalle</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            {datos.pedidos_en_curso.length > 1 ? (
+              <View style={estilos.pistaDeslizar}>
+                <Text style={estilos.pistaTexto}>‹ desliza para ver tus otros pedidos ›</Text>
+                <View style={estilos.puntosPedido}>
+                  {datos.pedidos_en_curso.map((_, i) => (
+                    <View key={i} style={[estilos.puntoPedido, i === paginaPedido && estilos.puntoPedidoActivo]} />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <View style={estilos.tarjetaPedidoVacia}>
+            <Text style={estilos.pedidoSub}>No tienes pedidos activos por ahora.</Text>
+          </View>
+        )}
+      </View>
     </ScrollView>
     </SafeAreaView>
   );
@@ -205,36 +292,55 @@ function crearEstilos(colores) {
     contenedor: { flex: 1, backgroundColor: colores.fondo },
     centro: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colores.fondo },
     encabezado: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    saludo: { fontSize: 18, fontWeight: "700", color: colores.texto },
-    campana: { fontSize: 20 },
+    saludo: { fontSize: tipografia.lg, fontWeight: "700", color: colores.texto },
     error: { color: colores.peligro, fontSize: 13 },
-    botonQr: {
-      backgroundColor: colores.acento,
-      borderRadius: 20,
+    // La sombra vive en un View aparte del Pressable — el Pressable necesita
+    // overflow:hidden para recortar la imagen a las esquinas redondeadas, y
+    // overflow:hidden recorta también la sombra si están en el mismo nodo.
+    botonQrSombra: {
       width: "48%",
       alignSelf: "center",
       aspectRatio: 1,
+      borderRadius: radios.grande,
+      backgroundColor: colores.fondo,
+      ...sombra.media,
+    },
+    botonQr: {
+      flex: 1,
+      borderRadius: radios.grande,
       alignItems: "center",
       justifyContent: "center",
       gap: 8,
-      elevation: 3,
-      shadowColor: "#000",
-      shadowOpacity: 0.15,
-      shadowRadius: 12,
-      shadowOffset: { width: 0, height: 4 },
+      overflow: "hidden",
     },
-    imagenBotonQr: { width: "100%", height: "100%", borderRadius: 20 },
-    textoBotonQr: { color: "#fff", fontSize: 16, fontWeight: "700" },
-    tarjetaSaldo: { backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde, borderRadius: 14, padding: 20, alignItems: "center", gap: 4 },
-    saldoTitulo: { fontSize: 26, fontWeight: "700", color: colores.texto },
-    saldoSub: { fontSize: 13, color: colores.textoMuted },
-    bannerRecompensa: { backgroundColor: "#fff7e6", borderWidth: 1, borderColor: "#f0dba9", borderRadius: 12, padding: 16, gap: 10 },
-    bannerTexto: { fontSize: 14, fontWeight: "600", color: colores.texto },
-    botonRedimir: { backgroundColor: colores.acento, borderRadius: 8, paddingVertical: 11, alignItems: "center" },
+    // Solo para el diseño de respaldo (sin imagen subida) — el color de
+    // fondo va aquí (no en el contenedor de la sombra), para que cuando SÍ
+    // hay imagen (que ya trae su propio fondo dibujado) no se asome un
+    // borde de otro color alrededor.
+    botonQrFondo: { backgroundColor: colores.acento },
+    imagenBotonQr: { width: "100%", height: "100%" },
+    textoBotonQr: { color: "#fff", fontSize: tipografia.md, fontWeight: "700" },
+    tarjetaSaldo: { backgroundColor: colores.superficie, borderRadius: radios.grande, padding: 20, alignItems: "center", gap: 4, ...sombra.suave },
+    saldoTitulo: { fontSize: tipografia.xl, fontWeight: "700", color: colores.texto },
+    saldoSub: { fontSize: tipografia.sm, color: colores.textoMuted },
+    bannerRecompensa: { backgroundColor: "#fff7e6", borderWidth: 1, borderColor: "#f0dba9", borderRadius: radios.grande, padding: 16, gap: 10, ...sombra.suave },
+    bannerTexto: { fontSize: tipografia.base, fontWeight: "600", color: colores.texto },
+    botonRedimir: { backgroundColor: colores.acento, borderRadius: radios.chico, paddingVertical: 11, alignItems: "center" },
+    botonPresionado: { opacity: 0.85, transform: [{ scale: 0.97 }] },
     textoBotonRedimir: { color: "#fff", fontWeight: "600" },
-    tarjetaPedido: { backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde, borderRadius: 12, padding: 16, gap: 10 },
+    seccionTitulo: { fontSize: tipografia.base, fontWeight: "700", color: colores.texto },
+    tarjetaPedido: { backgroundColor: colores.superficie, borderRadius: radios.medio, padding: 16, gap: 10, ...sombra.suave },
+    tarjetaPresionada: { opacity: 0.9, transform: [{ scale: 0.98 }] },
+    tarjetaPedidoVacia: { backgroundColor: colores.superficie, borderRadius: radios.medio, padding: 20, alignItems: "center", ...sombra.suave },
     pedidoTitulo: { fontSize: 14, fontWeight: "700", color: colores.texto },
+    pedidoItems: { fontSize: 12, color: colores.textoMuted, textAlign: "center" },
+    pedidoResumen: { fontSize: 13, fontWeight: "700", color: colores.texto, textAlign: "center" },
     pedidoEstado: { fontSize: 13, fontWeight: "600", color: colores.texto, textAlign: "center" },
     pedidoSub: { fontSize: 12, color: colores.textoMuted, marginTop: 2, textAlign: "center" },
+    pistaDeslizar: { alignItems: "center", gap: 6 },
+    pistaTexto: { fontSize: 11, color: colores.textoMuted },
+    puntosPedido: { flexDirection: "row", gap: 5 },
+    puntoPedido: { width: 6, height: 6, borderRadius: 3, backgroundColor: colores.borde },
+    puntoPedidoActivo: { backgroundColor: colores.acento, width: 14 },
   });
 }

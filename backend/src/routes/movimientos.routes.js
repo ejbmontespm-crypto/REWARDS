@@ -5,6 +5,7 @@ import { badRequest, notFound, conflict } from "../lib/errors.js";
 import { requireStaffAuth, requireRole, requireClienteAuth } from "../middleware/auth.js";
 import { obtenerConfig } from "../lib/config.js";
 import { calcularAcumulacion, diaLocalMexico } from "../lib/recompensa.js";
+import { notificarClientesPorId } from "../lib/notificar.js";
 import { exportarXlsx } from "../lib/exportarExcel.js";
 
 export const movimientosRouter = Router();
@@ -110,8 +111,11 @@ movimientosRouter.post(
       pedido = rows[0];
       if (!pedido) throw notFound("Pedido no encontrado");
       if (pedido.cliente_id !== cliente_id) throw badRequest("Ese pedido no es de este cliente");
-      if (!["recibido", "preparando", "listo"].includes(pedido.estado)) {
+      if (["entregado", "cancelado", "no_recogido"].includes(pedido.estado)) {
         throw conflict(`Ese pedido ya está en estado "${pedido.estado}", no se puede confirmar de nuevo`);
+      }
+      if (pedido.estado !== "listo") {
+        throw conflict(`Ese pedido todavía está "${pedido.estado}" — no se puede marcar como entregado hasta que esté listo`, "pedido_no_listo");
       }
       montoFinal = Number(pedido.total_mxn);
     }
@@ -141,6 +145,17 @@ movimientosRouter.post(
     let canjeCreado = null;
     if (pedido) {
       await query(`update pedidos set estado = 'entregado', updated_at = now() where id = $1`, [pedido_id]);
+
+      // Misma bandeja de notificaciones del cliente que el avance a "listo"
+      // (PATCH /pedidos/:id/estado) — aquí se cierra el ciclo del pedido.
+      const { rows: clienteRows } = await query(`select correo from clientes where id = $1`, [cliente_id]);
+      if (clienteRows[0]) {
+        notificarClientesPorId([{ id: cliente_id, correo: clienteRows[0].correo }], {
+          tipo: "otro",
+          asunto: "Pedido entregado",
+          texto: "Tu pedido fue entregado — ¡gracias por tu compra!",
+        }).catch(() => {});
+      }
 
       // Si el pedido traía créditos aplicados como pago (modalidad A), aquí
       // se confirma la redención — no antes (plan §7.1). Convierte de MXN

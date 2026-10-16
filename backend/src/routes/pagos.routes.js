@@ -46,6 +46,12 @@ pagosRouter.post(
     if (!cliente) throw conflict("Mercado Pago todavía no está conectado — falta MERCADOPAGO_ACCESS_TOKEN en el backend", "mp_no_conectado");
 
     const { pedido, porPagar } = await obtenerPedidoParaCobrar(req.params.pedidoId, req);
+    // La forma de pago se fija al crear el pedido (Carrito) — si eligió
+    // pagar en caja, no se puede "cambiar de opinión" y generar una liga
+    // en línea para ese mismo pedido después.
+    if (pedido.metodo_pago === "caja") {
+      throw conflict("Este pedido ya quedó marcado para pagarse en caja — la forma de pago no se puede cambiar", "metodo_pago_fijo");
+    }
 
     const preferencia = new Preference(cliente);
     const resultado = await preferencia.create({

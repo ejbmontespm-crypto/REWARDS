@@ -96,11 +96,18 @@ clientesRouter.get(
       else if (config.modalidad === "visitas") recompensaLista = visitas >= Number(config.umbral_visitas);
     }
 
+    // Un cliente puede tener MÁS DE UN pedido activo a la vez (nada le
+    // impide pedir otra vez antes de que le entreguen el primero) — se
+    // regresan todos, no solo el más reciente (fase A, ronda 5).
     const { rows: pedidos } = await query(
-      `select id, estado, hora_pickup, total_mxn, created_at
-       from pedidos
-       where cliente_id = $1 and estado not in ('entregado', 'cancelado', 'no_recogido')
-       order by created_at desc limit 1`,
+      `select p.id, p.estado, p.hora_pickup, p.total_mxn, p.metodo_pago, p.pago_confirmado, p.created_at,
+              coalesce((select sum(cantidad) from pedido_items where pedido_id = p.id), 0) as cantidad_productos,
+              (select json_agg(json_build_object('cantidad', pi.cantidad, 'producto_nombre', pr.nombre))
+                 from pedido_items pi join productos pr on pr.id = pi.producto_id
+                 where pi.pedido_id = p.id) as items
+       from pedidos p
+       where p.cliente_id = $1 and p.estado not in ('entregado', 'cancelado', 'no_recogido')
+       order by p.created_at asc`,
       [req.cliente.id]
     );
 
@@ -130,7 +137,7 @@ clientesRouter.get(
       },
       recompensa_lista: recompensaLista,
       solicitud_canje_pendiente: solicitudes[0] || null,
-      pedido_en_curso: pedidos[0] || null,
+      pedidos_en_curso: pedidos,
       elegibilidad_pedidos: elegibilidadPedidos,
     });
   })

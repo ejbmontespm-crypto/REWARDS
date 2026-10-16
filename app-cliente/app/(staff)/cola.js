@@ -37,10 +37,26 @@ export default function ColaPedidos() {
     }
   }, []);
 
+  // Sin spinner ni bloquear la vista — para el refresco automático de
+  // fondo. Antes solo se recargaba al entrar a la pestaña (useFocusEffect),
+  // así que un pedido nuevo, o uno que cambió de estado, no se veía hasta
+  // salir y volver a entrar a Cola.
+  const cargarSilencioso = useCallback(async (tabActual) => {
+    try {
+      const query = tabActual === "entregados" ? { estado: "entregado" } : {};
+      const { pedidos: rows } = await api.get("/pedidos/cola", { query });
+      setPedidos(rows);
+    } catch {
+      /* se reintenta en el siguiente ciclo, sin interrumpir lo que ya se ve */
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       cargar(tab);
-    }, [cargar, tab])
+      const intervalo = setInterval(() => cargarSilencioso(tab), 8000);
+      return () => clearInterval(intervalo);
+    }, [cargar, cargarSilencioso, tab])
   );
 
   async function avanzar(pedido) {
@@ -66,7 +82,12 @@ export default function ColaPedidos() {
       // confirmar la entrega: genera la acumulación (y el canje, si el
       // pedido traía créditos aplicados) en la misma llamada.
       await api.post("/movimientos", { cliente_id: pedido.cliente_id, pedido_id: pedido.id });
-      setPedidos((prev) => prev.filter((p) => p.id !== pedido.id));
+      // Mismo criterio visual que avanzar(): primero se ve la etiqueta
+      // cambiar a "Entregado" en su lugar (consistente con los otros 3
+      // pasos), y hasta después de un momento sale de "Activos" — antes
+      // desaparecía de golpe, rompiendo la sensación de flujo continuo.
+      setPedidos((prev) => prev.map((p) => (p.id === pedido.id ? { ...p, estado: "entregado" } : p)));
+      setTimeout(() => setPedidos((prev) => prev.filter((p) => p.id !== pedido.id)), 1200);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo confirmar la entrega.");
     } finally {
@@ -137,7 +158,9 @@ export default function ColaPedidos() {
                 <Text style={estilos.nombreCliente}>
                   {p.nombre} {p.apellido_paterno}
                 </Text>
-                <Text style={estilos.estadoTexto}>{ETIQUETA_ESTADO[p.estado]}</Text>
+                <Text style={[estilos.estadoTexto, p.estado === "entregado" && estilos.estadoTextoEntregado]}>
+                  {ETIQUETA_ESTADO[p.estado]}
+                </Text>
               </View>
               <Text style={estilos.hora}>
                 Pickup: {new Date(p.hora_pickup).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
@@ -148,7 +171,7 @@ export default function ColaPedidos() {
               ) : null}
               <Text style={estilos.total}>Total: ${Number(p.total_mxn).toFixed(0)}</Text>
 
-              {tab === "activos" ? (
+              {tab === "activos" && p.estado !== "entregado" ? (
                 <View style={estilos.filaBotones}>
                   {SIGUIENTE_ESTADO[p.estado] ? (
                     <Pressable testID={`avanzar-${p.id}`} style={estilos.botonAvanzar} onPress={() => avanzar(p)} disabled={accionando === p.id}>
@@ -241,6 +264,7 @@ function crearEstilos(colores) {
     filaEncabezado: { flexDirection: "row", justifyContent: "space-between" },
     nombreCliente: { fontSize: 14.5, fontWeight: "700", color: colores.texto },
     estadoTexto: { fontSize: 12, color: colores.acento, fontWeight: "600" },
+    estadoTextoEntregado: { color: colores.exito },
     hora: { fontSize: 12.5, color: colores.textoMuted },
     items: { fontSize: 13, color: colores.texto },
     total: { fontSize: 13, fontWeight: "600", color: colores.texto },

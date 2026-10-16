@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
+import { radios, sombra } from "../../constants/theme";
 
 export default function Promociones() {
   const router = useRouter();
@@ -43,7 +44,11 @@ export default function Promociones() {
       {!error && promociones.length === 0 ? <Text style={estilos.vacio}>No hay promociones activas por ahora.</Text> : null}
 
       {promociones.map((p) => (
-        <Pressable key={p.id} style={estilos.tarjeta} onPress={() => router.push(`/promocion/${p.id}`)}>
+        <Pressable
+          key={p.id}
+          style={({ pressed }) => [estilos.tarjeta, pressed && estilos.tarjetaPresionada]}
+          onPress={() => router.push(`/promocion/${p.id}`)}
+        >
           {p.tipo_archivo === "imagen" ? (
             <Image source={{ uri: p.archivo_path }} style={estilos.miniatura} resizeMode="cover" />
           ) : (
@@ -72,7 +77,8 @@ function crearEstilos(colores) {
     centro: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colores.fondo },
     error: { color: colores.peligro, fontSize: 13 },
     vacio: { textAlign: "center", color: colores.textoMuted, marginTop: 30 },
-    tarjeta: { flexDirection: "row", gap: 12, backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde, borderRadius: 12, padding: 12, alignItems: "center" },
+    tarjeta: { flexDirection: "row", gap: 12, backgroundColor: colores.superficie, borderRadius: radios.medio, padding: 12, alignItems: "center", ...sombra.suave },
+    tarjetaPresionada: { opacity: 0.9, transform: [{ scale: 0.98 }] },
     miniatura: { width: 56, height: 56, borderRadius: 8, backgroundColor: colores.fondo },
     miniaturaPdf: { alignItems: "center", justifyContent: "center" },
     textoPdf: { fontSize: 11, fontWeight: "700", color: colores.acento },
