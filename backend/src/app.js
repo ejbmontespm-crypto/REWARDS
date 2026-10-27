@@ -11,8 +11,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const app = express();
 
+const ORIGENES_PERMITIDOS = [
+  "https://panel-production-62b8.up.railway.app",
+  /^http:\/\/localhost(:\d+)?$/,
+  /^http:\/\/192\.168\.\d+\.\d+(:\d+)?$/,
+];
+
 app.use(helmet());
-app.use(cors()); // TODO: restringir orígenes cuando el panel/app tengan dominio real
+app.use(
+  cors({
+    // Sin Origin (apps nativas, curl, el webhook de Mercado Pago) siempre
+    // pasa — CORS solo aplica a requests de navegador con Origin.
+    origin: (origin, callback) => {
+      if (!origin || ORIGENES_PERMITIDOS.some((o) => (o instanceof RegExp ? o.test(origin) : o === origin))) {
+        return callback(null, true);
+      }
+      callback(new Error("Origen no permitido por CORS"));
+    },
+  })
+);
 app.use(express.json());
 app.use(morgan("dev"));
 
