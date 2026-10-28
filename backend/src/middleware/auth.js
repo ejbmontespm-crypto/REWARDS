@@ -62,23 +62,23 @@ export function firmarTokenCliente(clienteId) {
  *     auth_user_id; si es la primera vez que ese correo se autentica así,
  *     se enlaza aquí mismo.
  */
-export async function requireClienteAuth(req, res, next) {
-  const token = tomarBearer(req);
-  if (!token) return next(unauthorized("Falta el token de sesión"));
+/** Resuelve un token de cliente (nuestro JWT o sesión real de Supabase) a
+ *  un cliente_id — nunca truena, regresa null si no se pudo resolver. Lo
+ *  comparten requireClienteAuth (que sí exige que exista) y cualquier ruta
+ *  pública que solo quiera personalizar su respuesta SI hay sesión. */
+async function resolverClienteDesdeToken(token) {
+  if (!token) return null;
 
   try {
     const payload = jwt.verify(token, env.clienteSecret);
-    if (payload.tipo === "cliente") {
-      req.cliente = { id: payload.sub };
-      return next();
-    }
+    if (payload.tipo === "cliente") return payload.sub;
   } catch {
     // no es nuestro JWT — probamos como token real de Supabase Auth
   }
 
   try {
     const { data, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !data?.user) return next(unauthorized("Sesión inválida o vencida"));
+    if (error || !data?.user) return null;
 
     const correo = data.user.email?.toLowerCase();
     let { rows } = await query(`select id from clientes where auth_user_id = $1`, [data.user.id]);
@@ -93,13 +93,26 @@ export async function requireClienteAuth(req, res, next) {
       rows = enlazado.rows;
     }
 
-    if (!rows[0]) return next(unauthorized("No encontramos un cliente registrado con este correo"));
-
-    req.cliente = { id: rows[0].id };
-    next();
+    return rows[0]?.id || null;
   } catch {
-    next(unauthorized("Sesión inválida o vencida"));
+    return null;
   }
+}
+
+export async function requireClienteAuth(req, res, next) {
+  const clienteId = await resolverClienteDesdeToken(tomarBearer(req));
+  if (!clienteId) return next(unauthorized("Sesión inválida o vencida"));
+  req.cliente = { id: clienteId };
+  next();
+}
+
+/** Para rutas públicas que opcionalmente personalizan su respuesta si hay
+ *  sesión de cliente — nunca rechaza la petición si no hay token o es
+ *  inválido, solo deja req.cliente sin colgar en ese caso. */
+export async function clienteOpcional(req, res, next) {
+  const clienteId = await resolverClienteDesdeToken(tomarBearer(req));
+  if (clienteId) req.cliente = { id: clienteId };
+  next();
 }
 
 /**

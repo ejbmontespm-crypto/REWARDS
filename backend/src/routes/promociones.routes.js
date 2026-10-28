@@ -2,7 +2,7 @@ import { Router } from "express";
 import { query } from "../config/db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { badRequest, notFound } from "../lib/errors.js";
-import { requireStaffAuth, requireRole } from "../middleware/auth.js";
+import { requireStaffAuth, requireRole, clienteOpcional } from "../middleware/auth.js";
 import { notificarClientes } from "../lib/notificar.js";
 
 export const promocionesRouter = Router();
@@ -40,8 +40,38 @@ function validarVentanaHoraria({ dias_semana, hora_inicio, hora_fin }) {
 // ---------------------------------------------------------------------
 const esVistaAdmin = (req) => req.query.todas === "true";
 
+/**
+ * Elegible para una promo de cumpleaños: su cumpleaños cae en el mes
+ * actual, Y cada uno de los últimos `mesesHistorial` meses (completos,
+ * sin contar el actual) tuvo compras por al menos `gastoMinimo` — no
+ * basta con un mes bueno suelto, tiene que ser constante.
+ */
+async function clienteElegibleCumpleanos(clienteId, mesesHistorial, gastoMinimo) {
+  const { rows } = await query(`select fecha_nacimiento from clientes where id = $1`, [clienteId]);
+  const fechaNacimiento = rows[0]?.fecha_nacimiento;
+  if (!fechaNacimiento) return false;
+
+  const mesNacimiento = Number(fechaNacimiento.slice(5, 7));
+  const mesActual = new Date().getMonth() + 1;
+  if (mesNacimiento !== mesActual) return false;
+
+  const { rows: incumplidos } = await query(
+    `select 1 from generate_series(1, $2::int) as gs(n)
+     where coalesce(
+       (select sum(m.monto) from movimientos m
+        where m.cliente_id = $1
+          and date_trunc('month', m.created_at) = date_trunc('month', current_date) - (gs.n || ' months')::interval),
+       0
+     ) < $3
+     limit 1`,
+    [clienteId, mesesHistorial, gastoMinimo]
+  );
+  return incumplidos.length === 0;
+}
+
 promocionesRouter.get(
   "/",
+  clienteOpcional,
   (req, res, next) => (esVistaAdmin(req) ? requireStaffAuth(req, res, next) : next()),
   (req, res, next) => (esVistaAdmin(req) ? requireRole("admin")(req, res, next) : next()),
   asyncHandler(async (req, res) => {
@@ -72,7 +102,21 @@ promocionesRouter.get(
        order by pr.created_at desc`,
       perfil ? [perfil] : []
     );
-    res.json({ promociones: rows });
+
+    const promociones = [];
+    for (const promo of rows) {
+      if (!promo.solo_cumpleanos) {
+        promociones.push(promo);
+        continue;
+      }
+      if (
+        req.cliente &&
+        (await clienteElegibleCumpleanos(req.cliente.id, promo.cumpleanos_meses_historial, promo.cumpleanos_gasto_minimo_mxn))
+      ) {
+        promociones.push(promo);
+      }
+    }
+    res.json({ promociones });
   })
 );
 
@@ -84,9 +128,28 @@ promocionesRouter.post(
   requireStaffAuth,
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const { titulo, descripcion, tipo_archivo, archivo_path, fecha_inicio, fecha_fin, segmentos, activa, precio, categoria_id, dias_semana, hora_inicio, hora_fin } =
-      req.body || {};
+    const {
+      titulo,
+      descripcion,
+      tipo_archivo,
+      archivo_path,
+      fecha_inicio,
+      fecha_fin,
+      segmentos,
+      activa,
+      precio,
+      categoria_id,
+      dias_semana,
+      hora_inicio,
+      hora_fin,
+      solo_cumpleanos,
+      cumpleanos_meses_historial,
+      cumpleanos_gasto_minimo_mxn,
+    } = req.body || {};
     if (!titulo?.trim()) throw badRequest("Falta titulo");
+    if (solo_cumpleanos && !(cumpleanos_meses_historial > 0 && cumpleanos_gasto_minimo_mxn > 0)) {
+      throw badRequest("Una promo de cumpleaños necesita cumpleanos_meses_historial y cumpleanos_gasto_minimo_mxn, ambos mayores a 0");
+    }
     if (!TIPOS_ARCHIVO.includes(tipo_archivo)) throw badRequest(`tipo_archivo debe ser uno de: ${TIPOS_ARCHIVO.join(", ")}`);
     if (!archivo_path?.trim()) throw badRequest("Falta archivo_path");
     if (segmentos && (!Array.isArray(segmentos) || segmentos.some((s) => !PERFILES.includes(s)))) {
@@ -117,8 +180,9 @@ promocionesRouter.post(
 
     const { rows } = await query(
       `insert into promociones_informativas
-         (titulo, descripcion, tipo_archivo, archivo_path, fecha_inicio, fecha_fin, activa, segmentos, creado_por, producto_id, dias_semana, hora_inicio, hora_fin)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::smallint[], $12, $13)
+         (titulo, descripcion, tipo_archivo, archivo_path, fecha_inicio, fecha_fin, activa, segmentos, creado_por, producto_id, dias_semana, hora_inicio, hora_fin,
+          solo_cumpleanos, cumpleanos_meses_historial, cumpleanos_gasto_minimo_mxn)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::smallint[], $12, $13, $14, $15, $16)
        returning *`,
       [
         titulo.trim(),
@@ -134,6 +198,9 @@ promocionesRouter.post(
         dias_semana?.length ? dias_semana : null,
         hora_inicio || null,
         hora_fin || null,
+        Boolean(solo_cumpleanos),
+        solo_cumpleanos ? cumpleanos_meses_historial : null,
+        solo_cumpleanos ? cumpleanos_gasto_minimo_mxn : null,
       ]
     );
     const promocion = rows[0];
@@ -167,6 +234,9 @@ const CAMPOS_EDITABLES = [
   "dias_semana",
   "hora_inicio",
   "hora_fin",
+  "solo_cumpleanos",
+  "cumpleanos_meses_historial",
+  "cumpleanos_gasto_minimo_mxn",
 ];
 
 promocionesRouter.patch(
@@ -198,6 +268,12 @@ promocionesRouter.patch(
       hora_inicio: "hora_inicio" in cambios ? cambios.hora_inicio : actual.hora_inicio,
       hora_fin: "hora_fin" in cambios ? cambios.hora_fin : actual.hora_fin,
     });
+    const soloCumpleanosFinal = "solo_cumpleanos" in cambios ? cambios.solo_cumpleanos : actual.solo_cumpleanos;
+    const mesesFinal = "cumpleanos_meses_historial" in cambios ? cambios.cumpleanos_meses_historial : actual.cumpleanos_meses_historial;
+    const gastoFinal = "cumpleanos_gasto_minimo_mxn" in cambios ? cambios.cumpleanos_gasto_minimo_mxn : actual.cumpleanos_gasto_minimo_mxn;
+    if (soloCumpleanosFinal && !(mesesFinal > 0 && gastoFinal > 0)) {
+      throw badRequest("Una promo de cumpleaños necesita cumpleanos_meses_historial y cumpleanos_gasto_minimo_mxn, ambos mayores a 0");
+    }
 
     // "Se puede pedir desde el menú" en edición: si ya tenía producto
     // ligado, se actualiza su precio/categoría; si no tenía y ahora se

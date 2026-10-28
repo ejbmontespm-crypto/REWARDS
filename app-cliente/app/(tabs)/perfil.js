@@ -18,7 +18,7 @@ export default function Perfil() {
   const [movimientos, setMovimientos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [editando, setEditando] = useState(false);
-  const [form, setForm] = useState({ nombre: "", apellido_paterno: "", apellido_materno: "", telefono: "", correo: "" });
+  const [form, setForm] = useState({ nombre: "", apellido_paterno: "", apellido_materno: "", telefono: "", correo: "", fecha_nacimiento: "" });
   const [guardando, setGuardando] = useState(false);
   const [cambiandoNotif, setCambiandoNotif] = useState(false);
   const [error, setError] = useState("");
@@ -36,6 +36,7 @@ export default function Perfil() {
             apellido_materno: me.cliente.apellido_materno || "",
             telefono: me.cliente.telefono,
             correo: me.cliente.correo,
+            fecha_nacimiento: me.cliente.fecha_nacimiento || "",
           });
           setMovimientos(mov.movimientos);
         })
@@ -118,6 +119,13 @@ export default function Perfil() {
             <Campo estilos={estilos} etiqueta="Apellido materno" valor={form.apellido_materno} onCambia={(v) => setForm((f) => ({ ...f, apellido_materno: v }))} />
             <Campo estilos={estilos} etiqueta="Teléfono" valor={form.telefono} onCambia={(v) => setForm((f) => ({ ...f, telefono: v }))} teclado="phone-pad" />
             <Campo estilos={estilos} etiqueta="Correo" valor={form.correo} onCambia={(v) => setForm((f) => ({ ...f, correo: v }))} teclado="email-address" />
+            <Campo
+              estilos={estilos}
+              etiqueta="Fecha de nacimiento (AAAA-MM-DD)"
+              valor={form.fecha_nacimiento}
+              onCambia={(v) => setForm((f) => ({ ...f, fecha_nacimiento: v }))}
+              teclado="numbers-and-punctuation"
+            />
             {error ? <Text style={estilos.error}>{error}</Text> : null}
             <View style={{ flexDirection: "row", gap: 10, marginTop: 4 }}>
               <Pressable style={estilos.botonGuardar} onPress={guardar} disabled={guardando}>
@@ -134,6 +142,7 @@ export default function Perfil() {
             <Dato estilos={estilos} etiqueta="Teléfono" valor={cliente.telefono} />
             <Dato estilos={estilos} etiqueta="Correo" valor={cliente.correo} />
             <Dato estilos={estilos} etiqueta="Perfil" valor={ETIQUETA_PERFIL[cliente.tipo_perfil] || cliente.tipo_perfil} />
+            <Dato estilos={estilos} etiqueta="Nacimiento" valor={cliente.fecha_nacimiento || "Sin registrar — agrégala para la promo de cumpleaños"} />
           </View>
         )}
       </View>

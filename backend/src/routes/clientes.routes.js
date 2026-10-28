@@ -22,10 +22,13 @@ clientesRouter.post(
   "/",
   registroLimiter,
   asyncHandler(async (req, res) => {
-    const { nombre, apellido_paterno, apellido_materno, telefono, correo, tipo_perfil } = req.body || {};
+    const { nombre, apellido_paterno, apellido_materno, telefono, correo, tipo_perfil, fecha_nacimiento } = req.body || {};
 
     if (!nombre?.trim() || !apellido_paterno?.trim()) throw badRequest("Falta nombre o apellido_paterno");
     if (!telefono?.trim() || !correo?.trim()) throw badRequest("Teléfono y correo son obligatorios los dos");
+    if (!fecha_nacimiento || !/^\d{4}-\d{2}-\d{2}$/.test(fecha_nacimiento)) {
+      throw badRequest("Falta fecha_nacimiento (formato AAAA-MM-DD)");
+    }
     if (tipo_perfil && !TIPOS_PERFIL.includes(tipo_perfil)) {
       throw badRequest(`tipo_perfil debe ser uno de: ${TIPOS_PERFIL.join(", ")}`);
     }
@@ -49,10 +52,10 @@ clientesRouter.post(
     }
 
     const { rows } = await query(
-      `insert into clientes (nombre, apellido_paterno, apellido_materno, telefono, correo, tipo_perfil, auth_user_id)
-       values ($1, $2, $3, $4, $5, coalesce($6, 'otro')::perfil_tipo, $7)
-       returning id, nombre, apellido_paterno, apellido_materno, telefono, correo, tipo_perfil, created_at`,
-      [nombre.trim(), apellido_paterno.trim(), apellido_materno?.trim() || null, telefono.trim(), correoNormalizado, tipo_perfil, authUserId]
+      `insert into clientes (nombre, apellido_paterno, apellido_materno, telefono, correo, tipo_perfil, auth_user_id, fecha_nacimiento)
+       values ($1, $2, $3, $4, $5, coalesce($6, 'otro')::perfil_tipo, $7, $8)
+       returning id, nombre, apellido_paterno, apellido_materno, telefono, correo, tipo_perfil, fecha_nacimiento, created_at`,
+      [nombre.trim(), apellido_paterno.trim(), apellido_materno?.trim() || null, telefono.trim(), correoNormalizado, tipo_perfil, authUserId, fecha_nacimiento]
     );
 
     // Primer login implícito (fase3-app-cliente.md): al registrarse, la app
@@ -74,7 +77,7 @@ clientesRouter.get(
   asyncHandler(async (req, res) => {
     const { rows } = await query(
       `select c.id, c.nombre, c.apellido_paterno, c.apellido_materno, c.telefono, c.correo, c.tipo_perfil,
-              c.notificaciones_activas, c.confirmado_en_ciclo_actual, c.created_at,
+              c.notificaciones_activas, c.confirmado_en_ciclo_actual, c.created_at, c.fecha_nacimiento,
               s.creditos_disponibles, s.visitas_disponibles
        from clientes c
        left join saldos_cliente_v s on s.cliente_id = c.id
@@ -129,6 +132,7 @@ clientesRouter.get(
         tipo_perfil: cliente.tipo_perfil,
         notificaciones_activas: cliente.notificaciones_activas,
         confirmado_en_ciclo_actual: cliente.confirmado_en_ciclo_actual,
+        fecha_nacimiento: cliente.fecha_nacimiento,
         created_at: cliente.created_at,
       },
       saldo: {
@@ -149,7 +153,7 @@ clientesRouter.get(
 // staff/admin"). Reutiliza las mismas validaciones de forma que la ruta
 // de staff, pero con su propia lista de campos permitidos.
 // ---------------------------------------------------------------------
-const CAMPOS_EDITABLES_CLIENTE = ["nombre", "apellido_paterno", "apellido_materno", "telefono", "correo", "notificaciones_activas"];
+const CAMPOS_EDITABLES_CLIENTE = ["nombre", "apellido_paterno", "apellido_materno", "telefono", "correo", "notificaciones_activas", "fecha_nacimiento"];
 
 clientesRouter.patch(
   "/me",
@@ -164,6 +168,9 @@ clientesRouter.patch(
     if (cambios.telefono != null && !cambios.telefono.trim()) throw badRequest("El teléfono no puede quedar vacío");
     if (cambios.correo != null && !cambios.correo.trim()) throw badRequest("El correo no puede quedar vacío");
     if (cambios.correo) cambios.correo = cambios.correo.trim().toLowerCase();
+    if (cambios.fecha_nacimiento != null && !/^\d{4}-\d{2}-\d{2}$/.test(cambios.fecha_nacimiento)) {
+      throw badRequest("fecha_nacimiento debe tener formato AAAA-MM-DD");
+    }
 
     const columnas = Object.keys(cambios);
     const asignaciones = columnas.map((col, i) => `${col} = $${i + 2}`).join(", ");
@@ -171,7 +178,7 @@ clientesRouter.patch(
 
     const { rows } = await query(
       `update clientes set ${asignaciones}, updated_at = now() where id = $1
-       returning id, nombre, apellido_paterno, apellido_materno, telefono, correo, tipo_perfil, notificaciones_activas`,
+       returning id, nombre, apellido_paterno, apellido_materno, telefono, correo, tipo_perfil, notificaciones_activas, fecha_nacimiento`,
       [req.cliente.id, ...valores]
     );
     res.json({ cliente: rows[0] });
@@ -290,7 +297,7 @@ clientesRouter.get(
 // ---------------------------------------------------------------------
 // PATCH /clientes/:id  — editar / reactivar (admin)
 // ---------------------------------------------------------------------
-const CAMPOS_EDITABLES = ["nombre", "apellido_paterno", "apellido_materno", "telefono", "correo", "tipo_perfil", "notificaciones_activas", "confirmado_en_ciclo_actual"];
+const CAMPOS_EDITABLES = ["nombre", "apellido_paterno", "apellido_materno", "telefono", "correo", "tipo_perfil", "notificaciones_activas", "confirmado_en_ciclo_actual", "fecha_nacimiento"];
 
 clientesRouter.patch(
   "/:id",

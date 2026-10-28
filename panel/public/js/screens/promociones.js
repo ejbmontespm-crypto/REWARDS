@@ -228,6 +228,22 @@ async function formularioPromocion(content, promo) {
             <span class="form-hint">Días sin marcar = todos los días. Con esta ventana activa, el pedido que incluya este producto debe recogerse máximo 30 minutos después de hacerlo.</span>
           </div>
         </div>
+        <div style="border-top:1px solid #eeece7;margin-top:6px;padding-top:10px;">
+          <label style="display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;">
+            <input type="checkbox" id="check-cumpleanos" name="solo_cumpleanos" ${promo?.solo_cumpleanos ? "checked" : ""} /> Solo para cumpleañeros
+          </label>
+          <div id="bloque-cumpleanos" style="display:${promo?.solo_cumpleanos ? "flex" : "none"};gap:12px;align-items:flex-end;margin-top:8px;">
+            <div class="form-row" style="margin:0;">
+              <label class="form-label">Gasto mínimo mensual (MXN)</label>
+              <input class="form-input mono" type="number" step="0.01" min="0" name="cumpleanos_gasto_minimo_mxn" value="${promo?.cumpleanos_gasto_minimo_mxn ?? ""}" style="width:130px;" />
+            </div>
+            <div class="form-row" style="margin:0;">
+              <label class="form-label">Durante los últimos cuántos meses</label>
+              <input class="form-input mono" type="number" step="1" min="1" name="cumpleanos_meses_historial" value="${promo?.cumpleanos_meses_historial ?? ""}" style="width:90px;" />
+            </div>
+          </div>
+          <span class="form-hint" style="display:block;margin-top:4px;">Solo la ven clientes cuyo cumpleaños cae este mes Y que cumplieron ese gasto mínimo en CADA UNO de esos meses (no basta un mes bueno suelto).</span>
+        </div>
       </div>
       <div class="banner banner-warning" style="margin-top:4px;">
         ${iconos.alerta(16)}
@@ -247,6 +263,9 @@ async function formularioPromocion(content, promo) {
   });
   modal.querySelector("#check-ventana").addEventListener("change", (ev) => {
     modal.querySelector("#bloque-ventana").style.display = ev.target.checked ? "flex" : "none";
+  });
+  modal.querySelector("#check-cumpleanos").addEventListener("change", (ev) => {
+    modal.querySelector("#bloque-cumpleanos").style.display = ev.target.checked ? "flex" : "none";
   });
   modal.querySelector("#archivo-promo").addEventListener("change", async (ev) => {
     const archivo = ev.target.files[0];
@@ -268,6 +287,7 @@ async function formularioPromocion(content, promo) {
     const seActivaAhora = activa && !(editando && promo.activa);
     const pedible = form.get("pedible") === "on";
     const ventana = form.get("ventana") === "on";
+    const soloCumpleanos = form.get("solo_cumpleanos") === "on";
 
     if (!form.get("archivo_path")) {
       return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Sube un archivo (imagen o PDF) para la promoción.</div>`);
@@ -281,6 +301,9 @@ async function formularioPromocion(content, promo) {
     }
     if (ventana && (!form.get("hora_inicio") || !form.get("hora_fin"))) {
       return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Falta la hora de inicio o de fin de la ventana.</div>`);
+    }
+    if (soloCumpleanos && (!form.get("cumpleanos_gasto_minimo_mxn") || !form.get("cumpleanos_meses_historial"))) {
+      return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Falta el gasto mínimo o el número de meses para la promo de cumpleaños.</div>`);
     }
 
     const datos = {

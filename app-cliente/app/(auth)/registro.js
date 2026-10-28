@@ -25,6 +25,9 @@ export default function Registro() {
   const [telefono, setTelefono] = useState("");
   const [correo, setCorreo] = useState("");
   const [tipoPerfil, setTipoPerfil] = useState("alumno");
+  const [diaNac, setDiaNac] = useState("");
+  const [mesNac, setMesNac] = useState("");
+  const [anioNac, setAnioNac] = useState("");
   const [error, setError] = useState("");
   const [enviando, setEnviando] = useState(false);
 
@@ -32,6 +35,13 @@ export default function Registro() {
     setError("");
     if (!nombre.trim() || !apellidoPaterno.trim()) return setError("Falta nombre o apellido paterno.");
     if (!telefono.trim() || !correo.trim()) return setError("Teléfono y correo son obligatorios los dos.");
+
+    const dia = Number(diaNac);
+    const mes = Number(mesNac);
+    const anio = Number(anioNac);
+    const fechaValida = dia >= 1 && dia <= 31 && mes >= 1 && mes <= 12 && anio >= 1930 && anio <= new Date().getFullYear();
+    if (!fechaValida) return setError("Tu fecha de nacimiento no es válida.");
+    const fechaNacimiento = `${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 
     setEnviando(true);
     try {
@@ -42,6 +52,7 @@ export default function Registro() {
         telefono: telefono.trim(),
         correo: correo.trim(),
         tipo_perfil: tipoPerfil,
+        fecha_nacimiento: fechaNacimiento,
       });
       await guardarTokenPropio(token);
       await refrescar(); // el guard de (tabs) reacciona solo al cambiar el token
@@ -62,6 +73,15 @@ export default function Registro() {
       <Campo estilos={estilos} label="Apellido materno (opcional)" valor={apellidoMaterno} onCambia={setApellidoMaterno} />
       <Campo estilos={estilos} label="Teléfono" valor={telefono} onCambia={setTelefono} teclado="phone-pad" />
       <Campo estilos={estilos} label="Correo" valor={correo} onCambia={setCorreo} teclado="email-address" autoCapitalizar="none" />
+
+      <View>
+        <Text style={estilos.label}>Fecha de nacimiento</Text>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TextInput style={[estilos.input, { flex: 1 }]} placeholder="DD" keyboardType="number-pad" maxLength={2} value={diaNac} onChangeText={setDiaNac} />
+          <TextInput style={[estilos.input, { flex: 1 }]} placeholder="MM" keyboardType="number-pad" maxLength={2} value={mesNac} onChangeText={setMesNac} />
+          <TextInput style={[estilos.input, { flex: 1.4 }]} placeholder="AAAA" keyboardType="number-pad" maxLength={4} value={anioNac} onChangeText={setAnioNac} />
+        </View>
+      </View>
 
       <View>
         <Text style={estilos.label}>Tipo de perfil</Text>
