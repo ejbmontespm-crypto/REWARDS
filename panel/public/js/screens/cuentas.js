@@ -42,7 +42,10 @@ function pintar(content, { usuarios, solicitudes, pin }) {
             <td class="muted">${escapar(u.correo)}</td>
             <td><span class="badge ${u.rol === "admin" ? "badge-accent" : "badge-neutral"}">${ETIQUETA_ROL[u.rol]}</span></td>
             <td><button class="toggle ${u.activo ? "on" : ""} btn-toggle-activo" data-id="${u.id}"><div class="knob"></div></button></td>
-            <td><button class="icon-btn btn-editar-usuario" data-id="${u.id}">${iconos.lapiz(13)}</button></td>
+            <td style="display:flex;gap:4px;">
+              <button class="icon-btn btn-editar-usuario" data-id="${u.id}">${iconos.lapiz(13)}</button>
+              <button class="icon-btn btn-eliminar-usuario" data-id="${u.id}" data-nombre="${escapar(u.nombre_completo)}">${iconos.basura(13)}</button>
+            </td>
           </tr>`
           )
           .join("")}
@@ -109,6 +112,18 @@ function pintar(content, { usuarios, solicitudes, pin }) {
         await api.patch(`/usuarios-staff/${u.id}`, { activo: !u.activo });
         await cargarYPintar(content);
         toast(u.activo ? "Cuenta desactivada" : "Cuenta activada");
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    })
+  );
+  content.querySelectorAll(".btn-eliminar-usuario").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!confirm(`¿Eliminar la cuenta de ${b.dataset.nombre}? Esto no se puede deshacer.`)) return;
+      try {
+        await api.delete(`/usuarios-staff/${b.dataset.id}`);
+        toast("Cuenta eliminada");
+        await cargarYPintar(content);
       } catch (err) {
         toast(err.message, "error");
       }

@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { query } from "../config/db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
-import { badRequest, notFound } from "../lib/errors.js";
+import { badRequest, notFound, conflict } from "../lib/errors.js";
 import { requireStaffAuth, requireRole } from "../middleware/auth.js";
 import { generarPasswordTemporal } from "../lib/passwords.js";
 import { enviarCorreo } from "../lib/mailer.js";
@@ -85,5 +85,32 @@ usuariosStaffRouter.patch(
     );
     if (!rows[0]) throw notFound("Usuario no encontrado");
     res.json({ usuario: rows[0] });
+  })
+);
+
+// ---------------------------------------------------------------------
+// DELETE /usuarios-staff/:id — borrado real, solo si no tiene historial
+// asociado (movimientos, canjes, etc. — lo impone la propia base con sus
+// llaves foráneas). Si tiene historial, se bloquea con mensaje claro; la
+// alternativa en ese caso es desactivar la cuenta (PATCH activo=false).
+// ---------------------------------------------------------------------
+usuariosStaffRouter.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    if (req.params.id === req.staff.id) throw badRequest("No puedes eliminar tu propia cuenta");
+
+    try {
+      const { rows } = await query(`delete from usuarios_staff where id = $1 returning id`, [req.params.id]);
+      if (!rows[0]) throw notFound("Usuario no encontrado");
+      res.status(204).end();
+    } catch (err) {
+      if (err.code === "23503") {
+        throw conflict(
+          "No se puede eliminar: este usuario tiene historial asociado (movimientos, canjes, u otros registros). Desactívalo en vez de eliminarlo.",
+          "usuario_con_historial"
+        );
+      }
+      throw err;
+    }
   })
 );
