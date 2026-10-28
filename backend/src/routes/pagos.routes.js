@@ -9,24 +9,6 @@ import { env } from "../config/env.js";
 
 export const pagosRouter = Router();
 
-// ---------------------------------------------------------------------
-// GET /pagos/mercadopago/diagnostico  (admin, temporal) — muestra el valor
-// real de MERCADOPAGO_NOTIFICATION_URL byte por byte, para detectar
-// espacios/saltos de línea invisibles que el campo de Railway no deja ver.
-// Quitar una vez resuelto el bug de "notification_url invalid".
-// ---------------------------------------------------------------------
-pagosRouter.get(
-  "/mercadopago/diagnostico",
-  asyncHandler(async (req, res) => {
-    const valor = env.mercadopagoNotificationUrl || null;
-    res.json({
-      valor,
-      longitud: valor?.length ?? 0,
-      hex: valor ? Buffer.from(valor, "utf8").toString("hex") : null,
-    });
-  })
-);
-
 /**
  * Mercado Pago (fase A, ronda 4, punto 9) — dos formas de cobrar en línea,
  * ADITIVAS al flujo existente de "cobrar en caja" (nunca lo reemplazan):
