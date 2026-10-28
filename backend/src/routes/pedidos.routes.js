@@ -87,7 +87,7 @@ pedidosRouter.post(
   requireClienteAuth,
   asyncHandler(async (req, res) => {
     const cliente_id = req.cliente.id;
-    const { items, hora_pickup, creditos_aplicados_mxn, metodo_pago } = req.body || {};
+    const { items, hora_pickup, creditos_aplicados_mxn, metodo_pago, canjear_producto_id } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) throw badRequest("El carrito no puede venir vacío");
     if (!hora_pickup || Number.isNaN(Date.parse(hora_pickup))) throw badRequest("hora_pickup inválida");
@@ -215,8 +215,60 @@ pedidosRouter.post(
         }
       }
 
+      // Canje en línea (fase A, ronda 7): el cliente ya tiene su recompensa
+      // lista (modalidad credito_umbral o visitas) y la aplica ella misma al
+      // pedido, sin pasar por caja — el saldo se revalida aquí mismo, DENTRO
+      // de esta transacción, nunca confiando en lo que calculó el celular.
+      // credito_valor_mxn NO pasa por aquí: ese ya se cubre con
+      // creditos_aplicados_mxn arriba (puede cubrir hasta el 100% del total).
+      let canjeAplicado = null;
+      if (canjear_producto_id) {
+        const { rows: configRows } = await client.query(`select * from configuracion_recompensa where vigente_hasta is null`);
+        const config = configRows[0];
+        if (!config || !["credito_umbral", "visitas"].includes(config.modalidad)) {
+          throw conflict("La modalidad de recompensa activa no permite canjear un producto gratis así");
+        }
+        const { rows: elegibleRows } = await client.query(
+          `select 1 from configuracion_recompensa_productos_elegibles where configuracion_recompensa_id = $1 and producto_id = $2`,
+          [config.id, canjear_producto_id]
+        );
+        if (!elegibleRows[0]) throw badRequest("Ese producto no es elegible para tu recompensa actual");
+
+        const { rows: saldoRows } = await client.query(`select * from saldos_cliente_v where cliente_id = $1`, [cliente_id]);
+        const saldo = saldoRows[0] || { creditos_disponibles: 0, visitas_disponibles: 0 };
+
+        let cantidadDescontada;
+        if (config.modalidad === "credito_umbral") {
+          if (Number(saldo.creditos_disponibles) < Number(config.umbral_cd)) {
+            throw conflict("Ya no tienes suficientes créditos para este canje — puede que se te haya adelantado otra sesión");
+          }
+          cantidadDescontada = Number(config.umbral_cd);
+        } else {
+          if (Number(saldo.visitas_disponibles) < Number(config.umbral_visitas)) {
+            throw conflict("Ya no tienes suficientes visitas para este canje — puede que se te haya adelantado otra sesión");
+          }
+          cantidadDescontada = Number(config.umbral_visitas);
+        }
+
+        const { rows: prodRows } = await client.query(`select id, nombre, precio from productos where id = $1`, [canjear_producto_id]);
+        const productoRecompensa = prodRows[0];
+        if (!productoRecompensa) throw notFound("Producto de recompensa no encontrado");
+
+        await client.query(`insert into pedido_items (pedido_id, producto_id, cantidad, precio_unitario) values ($1, $2, 1, 0)`, [
+          pedido.id,
+          productoRecompensa.id,
+        ]);
+
+        const { rows: canjeRows } = await client.query(
+          `insert into canjes (cliente_id, tipo, cantidad_descontada, producto_id, monto_cubierto_mxn, diferencia_pagada_caja, pedido_id, configuracion_recompensa_id, canal)
+           values ($1, $2, $3, $4, $5, 0, $6, $7, 'en_linea') returning *`,
+          [cliente_id, config.modalidad, cantidadDescontada, productoRecompensa.id, productoRecompensa.precio, pedido.id, config.id]
+        );
+        canjeAplicado = canjeRows[0];
+      }
+
       await client.query("commit");
-      res.status(201).json({ pedido });
+      res.status(201).json({ pedido, canje: canjeAplicado });
     } catch (err) {
       await client.query("rollback");
       throw err;
