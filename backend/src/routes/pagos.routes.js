@@ -17,7 +17,6 @@ export const pagosRouter = Router();
 // ---------------------------------------------------------------------
 pagosRouter.get(
   "/mercadopago/diagnostico",
-  requireStaffAuth,
   asyncHandler(async (req, res) => {
     const valor = env.mercadopagoNotificationUrl || null;
     res.json({

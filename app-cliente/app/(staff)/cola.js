@@ -6,13 +6,13 @@ import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
 
 const SIGUIENTE_ESTADO = { recibido: "preparando", preparando: "listo" };
-const ETIQUETA_ESTADO = { recibido: "Recibido", preparando: "Preparando", listo: "Listo", entregado: "Entregado" };
+const ETIQUETA_ESTADO = { pendiente_pago: "Esperando pago", recibido: "Recibido", preparando: "Preparando", listo: "Listo", entregado: "Entregado" };
 const ETIQUETA_AVANZAR = { recibido: "Empezar a preparar", preparando: "Marcar listo" };
 
 export default function ColaPedidos() {
   const { colores } = useTema();
   const estilos = useMemo(() => crearEstilos(colores), [colores]);
-  const [tab, setTab] = useState("activos"); // "activos" | "entregados"
+  const [tab, setTab] = useState("activos"); // "activos" | "entregados" | "pendiente_pago"
   const [pedidos, setPedidos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -23,12 +23,17 @@ export default function ColaPedidos() {
   const [errorPrep, setErrorPrep] = useState("");
   const [accionando, setAccionando] = useState(null);
 
+  const queryDeTab = (tabActual) => {
+    if (tabActual === "entregados") return { estado: "entregado" };
+    if (tabActual === "pendiente_pago") return { estado: "pendiente_pago" };
+    return {};
+  };
+
   const cargar = useCallback(async (tabActual) => {
     setCargando(true);
     setError("");
     try {
-      const query = tabActual === "entregados" ? { estado: "entregado" } : {};
-      const { pedidos: rows } = await api.get("/pedidos/cola", { query });
+      const { pedidos: rows } = await api.get("/pedidos/cola", { query: queryDeTab(tabActual) });
       setPedidos(rows);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo cargar la cola.");
@@ -43,8 +48,7 @@ export default function ColaPedidos() {
   // salir y volver a entrar a Cola.
   const cargarSilencioso = useCallback(async (tabActual) => {
     try {
-      const query = tabActual === "entregados" ? { estado: "entregado" } : {};
-      const { pedidos: rows } = await api.get("/pedidos/cola", { query });
+      const { pedidos: rows } = await api.get("/pedidos/cola", { query: queryDeTab(tabActual) });
       setPedidos(rows);
     } catch {
       /* se reintenta en el siguiente ciclo, sin interrumpir lo que ya se ve */
@@ -141,6 +145,9 @@ export default function ColaPedidos() {
         <Pressable style={[estilos.tab, tab === "entregados" && estilos.tabActivo]} onPress={() => setTab("entregados")}>
           <Text style={[estilos.textoTab, tab === "entregados" && estilos.textoTabActivo]}>Entregados hoy</Text>
         </Pressable>
+        <Pressable style={[estilos.tab, tab === "pendiente_pago" && estilos.tabActivo]} onPress={() => setTab("pendiente_pago")}>
+          <Text style={[estilos.textoTab, tab === "pendiente_pago" && estilos.textoTabActivo]}>Esperando pago</Text>
+        </Pressable>
       </View>
 
       {cargando ? (
@@ -170,6 +177,26 @@ export default function ColaPedidos() {
                 <Text style={estilos.items}>{p.items.map((i) => `${i.cantidad}× ${i.producto_nombre}`).join(", ")}</Text>
               ) : null}
               <Text style={estilos.total}>Total: ${Number(p.total_mxn).toFixed(0)}</Text>
+
+              {tab === "pendiente_pago" ? (
+                <View style={estilos.filaBotones}>
+                  <Text style={estilos.notaPendientePago}>
+                    El cliente eligió pagar en línea y todavía no se confirma — no entra a cocina hasta que pague, o cancélalo si te pide ayuda en persona.
+                  </Text>
+                  <Pressable
+                    testID={`cancelar-pp-${p.id}`}
+                    style={estilos.botonCancelar}
+                    onPress={() => cancelar(p, false)}
+                    disabled={accionando === p.id}
+                  >
+                    {accionando === p.id ? (
+                      <ActivityIndicator color={colores.peligro} />
+                    ) : (
+                      <Text style={estilos.textoBotonCancelar}>Cancelar pedido</Text>
+                    )}
+                  </Pressable>
+                </View>
+              ) : null}
 
               {tab === "activos" && p.estado !== "entregado" ? (
                 <View style={estilos.filaBotones}>
@@ -269,6 +296,7 @@ function crearEstilos(colores) {
     items: { fontSize: 13, color: colores.texto },
     total: { fontSize: 13, fontWeight: "600", color: colores.texto },
     filaBotones: { flexDirection: "row", gap: 8, marginTop: 6 },
+    notaPendientePago: { flex: 1, fontSize: 11.5, color: colores.textoMuted, lineHeight: 15 },
     botonAvanzar: { flex: 1, backgroundColor: colores.acento, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
     textoBoton: { color: "#fff", fontWeight: "600", fontSize: 13 },
     botonCancelar: { borderWidth: 1, borderColor: colores.peligro, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 14, alignItems: "center" },
