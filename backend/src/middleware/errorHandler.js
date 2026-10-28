@@ -1,4 +1,5 @@
 import { ApiError } from "../lib/errors.js";
+import { query } from "../config/db.js";
 
 // Nombre amigable por constraint, para no exponer nombres de columnas/tablas crudos.
 const CONSTRAINT_MENSAJES = {
@@ -30,8 +31,16 @@ export function errorHandler(err, req, res, _next) {
     return res.status(400).json({ error: { code: "formato_invalido", message: "Alguno de los valores enviados tiene un formato inválido." } });
   }
 
-  // Error no anticipado — no revelamos el detalle interno al cliente, pero sí lo logueamos.
+  // Error no anticipado — no revelamos el detalle interno al cliente, pero sí lo
+  // logueamos: en consola (Railway) y en log_errores (bitácora del panel,
+  // temporal mientras dura el desarrollo — más fácil que andar pidiendo logs
+  // de Railway cada vez que algo truena sin avisar por qué).
   console.error(err);
+  query(
+    `insert into log_errores (metodo, ruta, mensaje, stack, staff_id, cliente_id) values ($1, $2, $3, $4, $5, $6)`,
+    [req.method, req.originalUrl, err.message || String(err), err.stack || null, req.staff?.id || null, req.cliente?.id || null]
+  ).catch((logErr) => console.error("No se pudo guardar en log_errores:", logErr.message));
+
   res.status(500).json({
     error: { code: "error_interno", message: "Algo salió mal de nuestro lado. Ya quedó registrado." },
   });

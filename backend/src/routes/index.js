@@ -18,6 +18,7 @@ import { passwordResetSolicitudesRouter } from "./passwordResetSolicitudes.route
 import { configuracionSistemaRouter } from "./configuracionSistema.routes.js";
 import { uploadsRouter } from "./uploads.routes.js";
 import { pagosRouter } from "./pagos.routes.js";
+import { logErroresRouter } from "./logErrores.routes.js";
 
 /**
  * Mapa de rutas — mismos grupos y nombres que fase6-backend-api.md.
@@ -47,3 +48,4 @@ apiRouter.use("/password-reset-solicitudes", passwordResetSolicitudesRouter);
 apiRouter.use("/configuracion-sistema", configuracionSistemaRouter);
 apiRouter.use("/uploads", uploadsRouter);
 apiRouter.use("/pagos", pagosRouter);
+apiRouter.use("/log-errores", logErroresRouter);

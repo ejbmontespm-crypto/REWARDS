@@ -11,6 +11,7 @@ const NAV = [
   { ruta: "cuentas", texto: "Cuentas", icono: "cuentas" },
   { ruta: "reportes", texto: "Reportes", icono: "reportes" },
   { ruta: "apariencia", texto: "Apariencia", icono: "paleta" },
+  { ruta: "bitacora", texto: "Bitácora (dev)", icono: "alerta" },
 ];
 
 function iniciales(nombreCompleto) {

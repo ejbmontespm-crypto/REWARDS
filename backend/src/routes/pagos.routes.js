@@ -105,6 +105,12 @@ pagosRouter.post(
       }
     } catch (err) {
       console.error("Error procesando webhook de Mercado Pago:", err.message);
+      query(`insert into log_errores (metodo, ruta, mensaje, stack) values ($1, $2, $3, $4)`, [
+        "POST",
+        "/pagos/mercadopago/webhook",
+        err.message || String(err),
+        err.stack || null,
+      ]).catch(() => {});
     }
     res.sendStatus(200);
   })
