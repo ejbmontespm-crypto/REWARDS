@@ -16,7 +16,11 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "package": "com.lealtadcafe.cliente"
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -32,7 +36,15 @@
           "cameraPermission": "Necesitamos tu cámara para escanear el QR del cliente.",
           "recordAudioAndroid": false
         }
-      ]
-    ]
+      ],
+      "expo-font"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d1a15492-9d0d-4d14-8853-934cf629c8f4"
+      }
+    },
+    "owner": "beme9502"
   }
 }
