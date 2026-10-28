@@ -20,8 +20,11 @@ movimientosRouter.get(
   requireClienteAuth,
   asyncHandler(async (req, res) => {
     const { rows } = await query(
-      `select id, monto, creditos_generados, cuenta_como_visita, created_at
-       from movimientos where cliente_id = $1 order by created_at desc limit 100`,
+      `select m.id, m.monto, m.creditos_generados, m.cuenta_como_visita, m.created_at, m.pedido_id,
+              (select json_agg(json_build_object('cantidad', pi.cantidad, 'producto_nombre', pr.nombre))
+                 from pedido_items pi join productos pr on pr.id = pi.producto_id
+                 where pi.pedido_id = m.pedido_id) as items
+       from movimientos m where m.cliente_id = $1 order by m.created_at desc limit 100`,
       [req.cliente.id]
     );
     res.json({ movimientos: rows });

@@ -150,7 +150,14 @@ export default function Perfil() {
         {movimientos.length ? (
           movimientos.map((m) => (
             <View key={m.id} style={estilos.filaMovimiento}>
-              <Text style={estilos.movimientoFecha}>{new Date(m.created_at).toLocaleDateString("es-MX")}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={estilos.movimientoFecha}>{new Date(m.created_at).toLocaleDateString("es-MX")}</Text>
+                {m.items?.length ? (
+                  <Text style={estilos.movimientoItems} numberOfLines={2}>
+                    {m.items.map((i) => `${i.cantidad}× ${i.producto_nombre}`).join(", ")}
+                  </Text>
+                ) : null}
+              </View>
               <Text style={estilos.movimientoMonto}>${Number(m.monto).toFixed(0)}</Text>
             </View>
           ))
@@ -213,8 +220,9 @@ function crearEstilos(colores) {
     textoBotonGuardar: { color: "#fff", fontWeight: "600", fontSize: 13.5 },
     botonCancelar: { flex: 1, borderWidth: 1, borderColor: colores.borde, borderRadius: 8, paddingVertical: 11, alignItems: "center" },
     textoBotonCancelar: { color: colores.texto, fontWeight: "600", fontSize: 13.5 },
-    filaMovimiento: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5 },
+    filaMovimiento: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5, gap: 10 },
     movimientoFecha: { fontSize: 13, color: colores.textoMuted },
+    movimientoItems: { fontSize: 11.5, color: colores.texto, marginTop: 2 },
     movimientoMonto: { fontSize: 13, color: colores.texto, fontWeight: "600" },
     vacio: { fontSize: 12.5, color: colores.textoMuted },
     botonActualizarTema: { paddingVertical: 10, alignItems: "center" },
