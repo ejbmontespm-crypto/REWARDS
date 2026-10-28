@@ -20,7 +20,8 @@ async function peticion(metodo, ruta, { body, query } = {}) {
 
   const headers = { "Content-Type": "application/json" };
   const sesion = await obtenerSesionActual();
-  if (sesion?.token) headers.Authorization = `Bearer ${sesion.token}`;
+  const teniaToken = Boolean(sesion?.token);
+  if (teniaToken) headers.Authorization = `Bearer ${sesion.token}`;
 
   let respuesta;
   try {
@@ -41,7 +42,11 @@ async function peticion(metodo, ruta, { body, query } = {}) {
   if (!respuesta.ok) {
     const mensaje = datos?.error?.message || `Error ${respuesta.status}`;
     const codigo = datos?.error?.code || "error";
-    if (respuesta.status === 401) {
+    // Solo forzamos logout+redirect si la petición SÍ llevaba un token y lo
+    // rechazaron (sesión vencida a medio uso) — un 401 en el login mismo
+    // (credenciales incorrectas, sin token todavía) es un error normal que
+    // la pantalla de login ya maneja con su propio mensaje inline.
+    if (respuesta.status === 401 && teniaToken) {
       await cerrarSesion();
       router.replace("/(auth)");
     }

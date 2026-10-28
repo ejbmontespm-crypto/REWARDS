@@ -1,11 +1,12 @@
 import { useState, useMemo } from "react";
-import { Text, TextInput, Pressable, StyleSheet, ActivityIndicator } from "react-native";
+import { Text, TextInput, Pressable, StyleSheet, ActivityIndicator, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { guardarTokenStaff } from "../../lib/session";
 import { useSession } from "../../lib/contextoSesion";
 import { useTema } from "../../lib/contextoTema";
+import { PANEL_URL } from "../../lib/config";
 
 export default function StaffLogin() {
   const router = useRouter();
@@ -53,6 +54,9 @@ export default function StaffLogin() {
       {error ? <Text style={estilos.error}>{error}</Text> : null}
       <Pressable style={estilos.boton} onPress={entrar} disabled={cargando}>
         {cargando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBoton}>Entrar</Text>}
+      </Pressable>
+      <Pressable onPress={() => Linking.openURL(`${PANEL_URL}/#/recuperar`)}>
+        <Text style={estilos.link}>¿Olvidaste tu contraseña?</Text>
       </Pressable>
       <Pressable onPress={() => router.back()}>
         <Text style={estilos.link}>Volver</Text>
