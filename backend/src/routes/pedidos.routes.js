@@ -189,10 +189,15 @@ pedidosRouter.post(
     try {
       await client.query("begin");
 
+      // Un pedido por liga de pago no entra a cocina hasta que el webhook de
+      // Mercado Pago confirme el pago — "pendiente_pago" lo deja fuera de
+      // ESTADOS_ACTIVOS (invisible en la Cola del staff) mientras tanto, para
+      // no preparar algo que a lo mejor nunca se pagó.
+      const estadoInicial = metodo_pago === "liga_mp" ? "pendiente_pago" : "recibido";
       const { rows: pedidoRows } = await client.query(
         `insert into pedidos (cliente_id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn, metodo_pago)
-         values ($1, 'recibido', $2, $3, $4, $5) returning *`,
-        [cliente_id, hora_pickup, totalMxn, creditosAplicados, metodo_pago || "caja"]
+         values ($1, $2, $3, $4, $5, $6) returning *`,
+        [cliente_id, estadoInicial, hora_pickup, totalMxn, creditosAplicados, metodo_pago || "caja"]
       );
       const pedido = pedidoRows[0];
 
@@ -362,6 +367,32 @@ pedidosRouter.patch(
 );
 
 // ---------------------------------------------------------------------
+// POST /pedidos/:id/pagar-en-caja — el cliente se rinde con el pago en
+// línea (p. ej. Mercado Pago le marcó error) y prefiere pagar al recoger.
+// Solo mientras siga "pendiente_pago" — en cuanto esto corre, el pedido
+// entra a la Cola del staff como cualquier pedido normal de caja.
+// ---------------------------------------------------------------------
+pedidosRouter.post(
+  "/:id/pagar-en-caja",
+  requireClienteAuth,
+  asyncHandler(async (req, res) => {
+    const { rows } = await query(`select * from pedidos where id = $1`, [req.params.id]);
+    const pedido = rows[0];
+    if (!pedido) throw notFound("Pedido no encontrado");
+    if (pedido.cliente_id !== req.cliente.id) throw forbidden("Ese pedido no es tuyo");
+    if (pedido.estado !== "pendiente_pago") {
+      throw conflict("Este pedido ya no está esperando pago en línea");
+    }
+
+    const { rows: updRows } = await query(
+      `update pedidos set estado = 'recibido', metodo_pago = 'caja', updated_at = now() where id = $1 returning *`,
+      [req.params.id]
+    );
+    res.json({ pedido: updRows[0] });
+  })
+);
+
+// ---------------------------------------------------------------------
 // POST /pedidos/:id/cancelar
 // Cliente propio: solo mientras "recibido", nunca con penalización.
 // Staff/admin: en cualquier momento; si ya venció (hora_pickup + tolerancia)
@@ -378,7 +409,7 @@ pedidosRouter.post(
 
     if (req.cliente) {
       if (pedido.cliente_id !== req.cliente.id) throw forbidden("Ese pedido no es tuyo");
-      if (pedido.estado !== "recibido") {
+      if (!["recibido", "pendiente_pago"].includes(pedido.estado)) {
         throw conflict('Ya no se puede cancelar — el staff ya empezó a prepararlo. Pásate a caja.');
       }
       const { rows: updRows } = await query(

@@ -2,7 +2,13 @@ import { View, Text, Image, StyleSheet } from "react-native";
 import { useTema } from "../lib/contextoTema";
 
 export const PASOS_PEDIDO = ["recibido", "preparando", "listo", "entregado"];
-export const ETIQUETA_PASO_PEDIDO = { recibido: "Recibido", preparando: "Preparando", listo: "Listo", entregado: "Entregado" };
+export const ETIQUETA_PASO_PEDIDO = {
+  pendiente_pago: "Esperando pago",
+  recibido: "Recibido",
+  preparando: "Preparando",
+  listo: "Listo",
+  entregado: "Entregado",
+};
 
 /**
  * Línea de tiempo del pedido con tazas (vacía = paso pendiente, llena = paso

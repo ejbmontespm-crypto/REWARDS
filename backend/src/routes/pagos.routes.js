@@ -93,8 +93,12 @@ pagosRouter.post(
     try {
       const pago = await new Payment(cliente).get({ id: paymentId });
       if (pago.status === "approved" && pago.external_reference) {
+        // "pendiente_pago" -> "recibido" solo pasa aquí (o si el cliente se
+        // rinde y elige pagar en caja, ver POST /pedidos/:id/pagar-en-caja)
+        // — nunca estaba en la Cola del staff antes de este momento.
         await query(
-          `update pedidos set pago_confirmado = true, mercadopago_payment_id = $2
+          `update pedidos set pago_confirmado = true, mercadopago_payment_id = $2,
+                  estado = case when estado = 'pendiente_pago' then 'recibido' else estado end
            where id = $1 and pago_confirmado = false`,
           [pago.external_reference, String(paymentId)]
         );

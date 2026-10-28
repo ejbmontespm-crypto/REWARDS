@@ -17,24 +17,24 @@ export default function DetallePedido() {
   // Todos los pedidos activos del cliente (no solo el que se tocó desde
   // Inicio) — se listan verticalmente, con el que se tocó siempre primero,
   // para poder ver todos sin perder de vista de cuál se entró a ver.
+  const cargar = useCallback(async () => {
+    try {
+      const d = await api.get("/clientes/me");
+      const activos = d.pedidos_en_curso || [];
+      const detalles = await Promise.all(activos.map((p) => api.get(`/pedidos/${p.id}`).then((r) => r.pedido)));
+      detalles.sort((a, b) => (a.id === id ? -1 : b.id === id ? 1 : 0));
+      setPedidos(detalles);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo cargar tu pedido.");
+    } finally {
+      setCargando(false);
+    }
+  }, [id]);
+
   useFocusEffect(
     useCallback(() => {
-      let vivo = true;
-      api
-        .get("/clientes/me")
-        .then(async (d) => {
-          const activos = d.pedidos_en_curso || [];
-          const detalles = await Promise.all(activos.map((p) => api.get(`/pedidos/${p.id}`).then((r) => r.pedido)));
-          if (!vivo) return;
-          detalles.sort((a, b) => (a.id === id ? -1 : b.id === id ? 1 : 0));
-          setPedidos(detalles);
-        })
-        .catch((err) => vivo && setError(err instanceof ApiError ? err.message : "No se pudo cargar tu pedido."))
-        .finally(() => vivo && setCargando(false));
-      return () => {
-        vivo = false;
-      };
-    }, [id])
+      cargar();
+    }, [cargar])
   );
 
   if (cargando) {
@@ -59,19 +59,20 @@ export default function DetallePedido() {
       {pedidos.map((pedido, i) => (
         <View key={pedido.id}>
           {i > 0 ? <View style={estilos.separadorPedidos} /> : null}
-          <TarjetaPedido pedido={pedido} colores={colores} estilos={estilos} router={router} />
+          <TarjetaPedido pedido={pedido} colores={colores} estilos={estilos} router={router} onCambio={cargar} />
         </View>
       ))}
     </ScrollView>
   );
 }
 
-function TarjetaPedido({ pedido, colores, estilos, router }) {
+function TarjetaPedido({ pedido, colores, estilos, router, onCambio }) {
   const [cancelando, setCancelando] = useState(false);
   const [pagando, setPagando] = useState(false);
   const [error, setError] = useState("");
 
-  const esEstadoFinalDistinto = !PASOS_PEDIDO.includes(pedido.estado);
+  const esPendientePago = pedido.estado === "pendiente_pago";
+  const esEstadoFinalDistinto = !esPendientePago && !PASOS_PEDIDO.includes(pedido.estado);
   const porPagar = Number(pedido.total_mxn) - Number(pedido.creditos_aplicados_mxn || 0);
   const cantidadProductos = pedido.items?.reduce((s, i) => s + i.cantidad, 0) || 0;
 
@@ -101,6 +102,20 @@ function TarjetaPedido({ pedido, colores, estilos, router }) {
     }
   }
 
+  const [cambiandoACaja, setCambiandoACaja] = useState(false);
+  async function pagarEnCaja() {
+    setCambiandoACaja(true);
+    setError("");
+    try {
+      await api.post(`/pedidos/${pedido.id}/pagar-en-caja`, {});
+      await onCambio?.();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo cambiar la forma de pago.");
+    } finally {
+      setCambiandoACaja(false);
+    }
+  }
+
   return (
     <View style={{ gap: 14 }}>
       {/* Resumen — para diferenciar de un vistazo cuál pedido es cuál al
@@ -109,7 +124,12 @@ function TarjetaPedido({ pedido, colores, estilos, router }) {
         {cantidadProductos} producto{cantidadProductos === 1 ? "" : "s"} — ${Number(pedido.total_mxn).toFixed(0)}
       </Text>
 
-      {esEstadoFinalDistinto ? (
+      {esPendientePago ? (
+        <View style={estilos.bannerPendientePago}>
+          <Text style={estilos.textoPendientePago}>⏳ Esperando confirmación de tu pago</Text>
+          <Text style={estilos.detalle}>Tu pedido entra a cocina en cuanto Mercado Pago confirme el pago.</Text>
+        </View>
+      ) : esEstadoFinalDistinto ? (
         <Text style={estilos.estadoFinal}>{pedido.estado === "cancelado" ? "Pedido cancelado" : "No se recogió a tiempo"}</Text>
       ) : (
         <PedidoProgreso estado={pedido.estado} />
@@ -138,15 +158,25 @@ function TarjetaPedido({ pedido, colores, estilos, router }) {
 
       {/* La forma de pago se elige en el Carrito y queda fija — aquí solo se
           ofrece reintentar si eligió Mercado Pago y todavía no se confirma. */}
-      {!esEstadoFinalDistinto && pedido.metodo_pago === "liga_mp" && !pedido.pago_confirmado && porPagar > 0 ? (
+      {pedido.metodo_pago === "liga_mp" && !pedido.pago_confirmado && porPagar > 0 && !["cancelado", "no_recogido"].includes(pedido.estado) ? (
         <Pressable style={estilos.botonPagar} onPress={pagarConMercadoPago} disabled={pagando}>
           {pagando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoPagar}>Pagar en línea con Mercado Pago</Text>}
         </Pressable>
       ) : null}
 
+      {esPendientePago ? (
+        <Pressable style={estilos.botonSecundario} onPress={pagarEnCaja} disabled={cambiandoACaja}>
+          {cambiandoACaja ? (
+            <ActivityIndicator color={colores.acento} />
+          ) : (
+            <Text style={estilos.textoBotonSecundario}>Prefiero pagar en caja al recoger</Text>
+          )}
+        </Pressable>
+      ) : null}
+
       {error ? <Text style={estilos.error}>{error}</Text> : null}
 
-      {pedido.estado === "recibido" ? (
+      {["recibido", "pendiente_pago"].includes(pedido.estado) ? (
         <Pressable style={estilos.botonCancelar} onPress={cancelar} disabled={cancelando}>
           {cancelando ? <ActivityIndicator color={colores.peligro} /> : <Text style={estilos.textoCancelar}>Cancelar pedido</Text>}
         </Pressable>
@@ -164,6 +194,10 @@ function crearEstilos(colores) {
     separadorPedidos: { height: 1, backgroundColor: colores.borde, marginVertical: 18 },
     resumenPedido: { fontSize: 15, fontWeight: "700", color: colores.texto, textAlign: "center" },
     estadoFinal: { fontSize: 16, fontWeight: "700", color: colores.texto, textAlign: "center" },
+    bannerPendientePago: { backgroundColor: "#fff7e6", borderWidth: 1, borderColor: "#f0dba9", borderRadius: 10, padding: 12, gap: 4 },
+    textoPendientePago: { fontSize: 14, fontWeight: "700", color: colores.texto },
+    botonSecundario: { borderWidth: 1, borderColor: colores.borde, borderRadius: 10, paddingVertical: 13, alignItems: "center" },
+    textoBotonSecundario: { color: colores.texto, fontWeight: "600", fontSize: 13.5 },
     tarjeta: { backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde, borderRadius: 12, padding: 16 },
     detalle: { fontSize: 13, color: colores.textoMuted, marginTop: 6 },
     itemTexto: { fontSize: 14, color: colores.texto },
