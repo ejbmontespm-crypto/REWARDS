@@ -10,6 +10,17 @@ export class ApiError extends Error {
   }
 }
 
+// Endpoints públicos de autenticación — no necesitan (ni deben llevar) el
+// token de una sesión previa, y su propio 401 (credenciales/código
+// incorrectos) es un resultado normal, no una sesión vencida.
+const RUTAS_AUTH_PUBLICAS = new Set([
+  "/auth/staff/login",
+  "/auth/staff/forgot-password",
+  "/auth/admin/backup-code/solicitar",
+  "/auth/admin/backup-code/verificar",
+  "/auth/cliente/codigo-asistido/verificar",
+]);
+
 async function peticion(metodo, ruta, { body, query } = {}) {
   let url = `${API_BASE_URL}${ruta}`;
   if (query) {
@@ -18,8 +29,9 @@ async function peticion(metodo, ruta, { body, query } = {}) {
     if (qs) url += `?${qs}`;
   }
 
+  const esRutaPublica = RUTAS_AUTH_PUBLICAS.has(ruta);
   const headers = { "Content-Type": "application/json" };
-  const sesion = await obtenerSesionActual();
+  const sesion = esRutaPublica ? null : await obtenerSesionActual();
   const teniaToken = Boolean(sesion?.token);
   if (teniaToken) headers.Authorization = `Bearer ${sesion.token}`;
 
@@ -46,7 +58,7 @@ async function peticion(metodo, ruta, { body, query } = {}) {
     // rechazaron (sesión vencida a medio uso) — un 401 en el login mismo
     // (credenciales incorrectas, sin token todavía) es un error normal que
     // la pantalla de login ya maneja con su propio mensaje inline.
-    if (respuesta.status === 401 && teniaToken) {
+    if (respuesta.status === 401 && teniaToken && !esRutaPublica) {
       await cerrarSesion();
       router.replace("/(auth)");
     }
