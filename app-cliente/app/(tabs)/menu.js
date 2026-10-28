@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Modal } from "react-native";
+import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Modal, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { api, ApiError } from "../../lib/api";
@@ -7,8 +7,14 @@ import { useCarrito } from "../../lib/contextoCarrito";
 import { useTema } from "../../lib/contextoTema";
 import { mostrarToast } from "../../lib/toast";
 import { radios, tipografia, sombra } from "../../constants/theme";
+import { ASSET_BASE_URL } from "../../lib/config";
 
 const DIAS_SEMANA_CORTO = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
+function urlImagen(path) {
+  if (!path) return null;
+  return /^https?:\/\//.test(path) ? path : `${ASSET_BASE_URL}${path}`;
+}
 
 function textoVentanaPromo(promo) {
   if (!promo?.hora_inicio) return null;
@@ -116,6 +122,9 @@ export default function Menu() {
                   onPress={() => tocarProducto(p)}
                   disabled={!puedeOrdenar || !p.disponible}
                 >
+                  {urlImagen(p.imagen_path) ? (
+                    <Image source={{ uri: urlImagen(p.imagen_path) }} style={estilos.fotoProducto} resizeMode="cover" />
+                  ) : null}
                   <View style={{ flex: 1 }}>
                     <Text style={estilos.nombreProducto}>{p.nombre}</Text>
                     {p.descripcion ? <Text style={estilos.descripcionProducto}>{p.descripcion}</Text> : null}
@@ -251,6 +260,7 @@ function crearEstilos(colores) {
     },
     tarjetaPresionada: { opacity: 0.85, transform: [{ scale: 0.98 }] },
     tarjetaAgotada: { opacity: 0.5 },
+    fotoProducto: { width: 56, height: 56, borderRadius: radios.chico, marginRight: 12, backgroundColor: colores.fondo },
     nombreProducto: { fontSize: 14.5, fontWeight: "600", color: colores.texto },
     descripcionProducto: { fontSize: 12, color: colores.textoMuted, marginTop: 2 },
     ventanaTexto: { fontSize: tipografia.xs, color: colores.acento, fontWeight: "600", marginTop: 3 },

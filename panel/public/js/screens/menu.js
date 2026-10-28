@@ -2,6 +2,12 @@ import { api, ApiError } from "../api.js";
 import { renderShell } from "../layout.js";
 import { spinner, bannerError, escapar, toast, abrirModal, cerrarModal, formatoMXN } from "../ui.js";
 import { iconos } from "../icons.js";
+import { ASSET_BASE_URL } from "../config.js";
+
+function urlCompleta(url) {
+  if (!url) return "";
+  return /^https?:\/\//.test(url) ? url : `${ASSET_BASE_URL}${url}`;
+}
 
 let estadoActual = null; // { categorias, productos, extras, pedidosActivos, tolerancia }
 
@@ -356,6 +362,16 @@ async function formularioProducto(content, producto) {
       <div class="form-row"><label class="form-label">Descripción</label><input class="form-input" name="descripcion" value="${producto?.descripcion ? escapar(producto.descripcion) : ""}" /></div>
       <div class="form-row"><label class="form-label">Precio (MXN)</label><input class="form-input mono" type="number" step="0.01" min="0" name="precio" value="${producto ? producto.precio : ""}" required /></div>
       <div class="form-row">
+        <label class="form-label">Foto del platillo/bebida</label>
+        <div style="display:flex;gap:14px;align-items:center;">
+          <div style="width:56px;height:56px;flex-shrink:0;border:1px solid #e6e2db;border-radius:8px;overflow:hidden;background:#f1efe9;display:flex;align-items:center;justify-content:center;">
+            <img id="preview-imagen-producto" src="${urlCompleta(producto?.imagen_path)}" style="max-width:100%;max-height:100%;object-fit:cover;" onerror="this.style.opacity=0.15" />
+          </div>
+          <input type="file" accept="image/png,image/jpeg,image/webp" id="archivo-imagen-producto" style="font-size:12.5px;" />
+        </div>
+        <div id="estado-subida-imagen-producto" style="font-size:12px;color:#726c60;margin-top:4px;"></div>
+      </div>
+      <div class="form-row">
         <label class="form-label">Categoría</label>
         <select class="form-select" name="categoria_id">
           <option value="">Sin categoría</option>
@@ -387,11 +403,26 @@ async function formularioProducto(content, producto) {
     </form>
   `);
   modal.querySelector("#modal-cancelar").addEventListener("click", cerrarModal);
+  modal.querySelector("#archivo-imagen-producto").addEventListener("change", async (ev) => {
+    const archivo = ev.target.files[0];
+    if (!archivo) return;
+    const estadoBox = modal.querySelector("#estado-subida-imagen-producto");
+    estadoBox.textContent = "Subiendo…";
+    try {
+      const { url } = await api.subirArchivo(archivo);
+      modal.querySelector("#preview-imagen-producto").src = urlCompleta(url);
+      modal.querySelector("#form-producto").dataset.imagenPath = url;
+      estadoBox.textContent = "Listo — se guarda junto con el producto.";
+    } catch (err) {
+      estadoBox.textContent = err instanceof ApiError ? err.message : "No se pudo subir la imagen.";
+    }
+  });
   modal.querySelector("#form-producto").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const form = new FormData(ev.target);
     const extraIds = form.getAll("extra_ids");
-    const datos = { nombre: form.get("nombre"), descripcion: form.get("descripcion") || null, precio: Number(form.get("precio")), categoria_id: form.get("categoria_id") || null };
+    const imagenPath = ev.target.dataset.imagenPath ?? producto?.imagen_path ?? null;
+    const datos = { nombre: form.get("nombre"), descripcion: form.get("descripcion") || null, precio: Number(form.get("precio")), categoria_id: form.get("categoria_id") || null, imagen_path: imagenPath };
     try {
       let id = producto?.id;
       if (editando) await api.patch(`/productos/${id}`, datos);

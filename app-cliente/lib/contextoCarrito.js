@@ -10,11 +10,27 @@ export function useCarrito() {
 
 let siguienteId = 1;
 
+/** Firma de los extras elegidos (sin importar el orden) — dos líneas del
+ *  carrito son "el mismo producto" si comparten producto_id y esta firma. */
+function firmaExtras(extras) {
+  return (extras || [])
+    .map((e) => e.id)
+    .sort()
+    .join(",");
+}
+
 export function CarritoProvider({ children }) {
   const [items, setItems] = useState([]); // { id, producto_id, nombre, precio_unitario, cantidad, extras: [{id, nombre, costo}] }
 
   const agregar = useCallback((item) => {
-    setItems((prev) => [...prev, { ...item, id: siguienteId++ }]);
+    setItems((prev) => {
+      const firma = firmaExtras(item.extras);
+      const existente = prev.find((i) => i.producto_id === item.producto_id && firmaExtras(i.extras) === firma);
+      if (existente) {
+        return prev.map((i) => (i.id === existente.id ? { ...i, cantidad: i.cantidad + (item.cantidad || 1) } : i));
+      }
+      return [...prev, { ...item, id: siguienteId++ }];
+    });
   }, []);
 
   const quitar = useCallback((id) => {
