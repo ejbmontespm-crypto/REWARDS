@@ -24,6 +24,9 @@ export function render() {
             Entrar
           </button>
         </form>
+        <div style="text-align:center;margin-top:16px;">
+          <a href="#/recuperar" style="font-size:12.5px;color:#726c60;">¿Olvidaste tu contraseña?</a>
+        </div>
       </div>
     </div>
   `;

@@ -1,5 +1,6 @@
 import { estaAutenticado } from "./auth.js";
 import * as login from "./screens/login.js";
+import * as recuperar from "./screens/recuperar.js";
 import * as cambiarPassword from "./screens/cambiarPassword.js";
 import * as dashboard from "./screens/dashboard.js";
 import * as recompensa from "./screens/recompensa.js";
@@ -11,7 +12,7 @@ import * as cuentas from "./screens/cuentas.js";
 import * as reportes from "./screens/reportes.js";
 import * as apariencia from "./screens/apariencia.js";
 
-const RUTAS_PUBLICAS = new Set(["login"]);
+const RUTAS_PUBLICAS = new Set(["login", "recuperar"]);
 
 function rutaActual() {
   const hash = window.location.hash.replace(/^#\/?/, "");
@@ -27,6 +28,7 @@ async function despachar() {
   }
 
   if (ruta === "login") return login.render();
+  if (ruta === "recuperar") return recuperar.render();
   if (ruta === "cambiar-password") return cambiarPassword.render();
   if (ruta === "dashboard") return dashboard.render();
   if (ruta === "recompensa") return recompensa.render();
