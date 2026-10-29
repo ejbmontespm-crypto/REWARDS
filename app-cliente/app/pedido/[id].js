@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linking } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { api, ApiError } from "../../lib/api";
@@ -37,6 +37,18 @@ export default function DetallePedido() {
       cargar();
     }, [cargar])
   );
+
+  // Justo al volver de Mercado Pago el webhook todavía puede no haber
+  // llegado — sin esto, la pantalla se queda pegada en "esperando pago"
+  // hasta que el cliente sale y vuelve a entrar. Mientras haya algún
+  // pedido pendiente_pago visible, revisa cada 3s (silencioso, sin
+  // spinner) hasta que se resuelva.
+  const hayPendientePago = (pedidos || []).some((p) => p.estado === "pendiente_pago");
+  useEffect(() => {
+    if (!hayPendientePago) return;
+    const intervalo = setInterval(cargar, 3000);
+    return () => clearInterval(intervalo);
+  }, [hayPendientePago, cargar]);
 
   if (cargando) {
     return (
