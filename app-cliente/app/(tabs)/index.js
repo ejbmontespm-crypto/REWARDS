@@ -76,7 +76,7 @@ function progresoRecompensa(saldo, config, precioMasBarato) {
 
 export default function Inicio() {
   const router = useRouter();
-  const { colores, logoUrl, logoQrUrl, croissantGrisUrl, croissantDoradoUrl } = useTema();
+  const { colores, logoUrl, croissantGrisUrl, croissantDoradoUrl } = useTema();
   const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [datos, setDatos] = useState(null);
   const [config, setConfig] = useState(null);
@@ -87,7 +87,6 @@ export default function Inicio() {
   const [redimiendo, setRedimiendo] = useState(false);
   const [paginaPedido, setPaginaPedido] = useState(0);
   const [notificacionesNoLeidas, setNotificacionesNoLeidas] = useState(0);
-  const escalaQr = useRef(new Animated.Value(1)).current;
   const escalaCelebracion = useRef(new Animated.Value(1)).current;
   const recompensaListaAnterior = useRef(false);
 
@@ -148,10 +147,6 @@ export default function Inicio() {
     recompensaListaAnterior.current = Boolean(datos?.recompensa_lista);
   }, [datos?.recompensa_lista, escalaCelebracion]);
 
-  function presionarQr(hacia) {
-    Animated.spring(escalaQr, { toValue: hacia, useNativeDriver: true, friction: 5 }).start();
-  }
-
   async function redimir() {
     setRedimiendo(true);
     try {
@@ -196,23 +191,9 @@ export default function Inicio() {
 
       {error ? <Text style={estilos.error}>{error}</Text> : null}
 
-      <Animated.View style={[estilos.botonQrSombra, { transform: [{ scale: escalaQr }] }]}>
-        <Pressable
-          style={[estilos.botonQr, !logoQrUrl && estilos.botonQrFondo]}
-          onPressIn={() => presionarQr(0.95)}
-          onPressOut={() => presionarQr(1)}
-          onPress={() => router.push("/mi-qr")}
-        >
-          {logoQrUrl ? (
-            <Image source={{ uri: logoQrUrl }} style={estilos.imagenBotonQr} resizeMode="cover" />
-          ) : (
-            <>
-              <Logo url={logoUrl} width={48} />
-              <Text style={estilos.textoBotonQr}>Mi QR</Text>
-            </>
-          )}
-        </Pressable>
-      </Animated.View>
+      <View style={estilos.contenedorLogo}>
+        <Logo url={logoUrl} width={150} />
+      </View>
 
       <View style={estilos.tarjetaSaldo}>
         {progreso && croissantGrisUrl && croissantDoradoUrl ? (
@@ -318,32 +299,7 @@ function crearEstilos(colores) {
     },
     textoBadgeCampana: { color: "#fff", fontSize: 10, fontWeight: "700" },
     error: { color: colores.peligro, fontSize: 13 },
-    // La sombra vive en un View aparte del Pressable — el Pressable necesita
-    // overflow:hidden para recortar la imagen a las esquinas redondeadas, y
-    // overflow:hidden recorta también la sombra si están en el mismo nodo.
-    botonQrSombra: {
-      width: "48%",
-      alignSelf: "center",
-      aspectRatio: 1,
-      borderRadius: radios.grande,
-      backgroundColor: colores.fondo,
-      ...sombra.media,
-    },
-    botonQr: {
-      flex: 1,
-      borderRadius: radios.grande,
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      overflow: "hidden",
-    },
-    // Solo para el diseño de respaldo (sin imagen subida) — el color de
-    // fondo va aquí (no en el contenedor de la sombra), para que cuando SÍ
-    // hay imagen (que ya trae su propio fondo dibujado) no se asome un
-    // borde de otro color alrededor.
-    botonQrFondo: { backgroundColor: colores.acento },
-    imagenBotonQr: { width: "100%", height: "100%" },
-    textoBotonQr: { color: "#fff", fontSize: tipografia.md, fontWeight: "700" },
+    contenedorLogo: { alignItems: "center", paddingVertical: 4 },
     tarjetaSaldo: { backgroundColor: colores.superficie, borderRadius: radios.grande, padding: 20, alignItems: "center", gap: 4, ...sombra.suave },
     saldoTitulo: { fontSize: tipografia.xl, fontWeight: "700", color: colores.texto },
     saldoSub: { fontSize: tipografia.sm, color: colores.textoMuted },
