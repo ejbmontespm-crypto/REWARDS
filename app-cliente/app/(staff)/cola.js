@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
+import QRCode from "react-native-qrcode-svg";
 import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
 
@@ -178,6 +179,13 @@ export default function ColaPedidos() {
               ) : null}
               <Text style={estilos.total}>Total: ${Number(p.total_mxn).toFixed(0)}</Text>
 
+              {tab === "activos" && p.estado === "listo" ? (
+                <View style={estilos.bloqueQrEtiqueta}>
+                  <QRCode value={p.id} size={64} />
+                  <Text style={estilos.notaQrEtiqueta}>Etiqueta para escanear al entregar (pestaña "Entregar")</Text>
+                </View>
+              ) : null}
+
               {tab === "pendiente_pago" ? (
                 <View style={estilos.filaBotones}>
                   <Text style={estilos.notaPendientePago}>
@@ -296,6 +304,8 @@ function crearEstilos(colores) {
     items: { fontSize: 13, color: colores.texto },
     total: { fontSize: 13, fontWeight: "600", color: colores.texto },
     filaBotones: { flexDirection: "row", gap: 8, marginTop: 6 },
+    bloqueQrEtiqueta: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8, padding: 8, backgroundColor: colores.fondo, borderRadius: 8 },
+    notaQrEtiqueta: { flex: 1, fontSize: 11, color: colores.textoMuted, lineHeight: 15 },
     notaPendientePago: { flex: 1, fontSize: 11.5, color: colores.textoMuted, lineHeight: 15 },
     botonAvanzar: { flex: 1, backgroundColor: colores.acento, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
     textoBoton: { color: "#fff", fontWeight: "600", fontSize: 13 },

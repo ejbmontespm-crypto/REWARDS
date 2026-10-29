@@ -36,6 +36,10 @@ export default function StaffTabsLayout() {
         options={{ title: "Cola de pedidos", tabBarIcon: ({ color, size }) => <Ionicons name="receipt" size={size + 4} color={color} /> }}
       />
       <Tabs.Screen
+        name="entrega"
+        options={{ title: "Entregar", tabBarIcon: ({ color, size }) => <Ionicons name="scan" size={size + 4} color={color} /> }}
+      />
+      <Tabs.Screen
         name="notificaciones"
         options={{
           title: "Notificaciones",
