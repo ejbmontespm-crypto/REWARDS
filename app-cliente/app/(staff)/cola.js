@@ -3,12 +3,26 @@ import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndic
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import QRCode from "react-native-qrcode-svg";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
+import { construirHtmlEtiqueta } from "../../lib/etiquetaPedido";
 
 const SIGUIENTE_ESTADO = { recibido: "preparando", preparando: "listo" };
 const ETIQUETA_ESTADO = { pendiente_pago: "Esperando pago", recibido: "Recibido", preparando: "Preparando", listo: "Listo", entregado: "Entregado" };
 const ETIQUETA_AVANZAR = { recibido: "Empezar a preparar", preparando: "Marcar listo" };
+
+/** Genera el PDF de la etiqueta del pedido y abre el share sheet — mientras
+ *  no haya impresora conectada, esto hace las veces de "imprimir": el
+ *  staff puede guardarlo, verlo o mandarlo a cualquier impresora que ya
+ *  tenga emparejada. Cuando exista el driver real de la Xprinter, esta
+ *  misma función es la que cambia por el envío directo por Bluetooth. */
+async function generarYCompartirEtiqueta(pedido) {
+  const html = await construirHtmlEtiqueta(pedido);
+  const { uri } = await Print.printToFileAsync({ html, width: 113, height: 170 }); // ~40x60mm en puntos, respaldo si el motor ignora @page
+  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+}
 
 export default function ColaPedidos() {
   const { colores } = useTema();
@@ -73,6 +87,14 @@ export default function ColaPedidos() {
       // actualiza su estado, no desaparece la tarjeta como si ya se hubiera
       // entregado (eso solo pasa de verdad en el escaneo, no aquí).
       setPedidos((prev) => prev.map((p) => (p.id === pedido.id ? { ...p, estado: nuevoEstado } : p)));
+
+      // "Para no perder ninguna comanda": en cuanto pasa a preparando, se
+      // genera/comparte el ticket solo, sin que nadie tenga que acordarse
+      // de apretar nada aparte. Si falla (ej. sin apps para compartir
+      // disponibles), no bloquea el flujo — el pedido ya avanzó bien.
+      if (nuevoEstado === "preparando") {
+        generarYCompartirEtiqueta(pedido).catch(() => {});
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo avanzar el pedido.");
     } finally {
@@ -179,14 +201,7 @@ export default function ColaPedidos() {
               ) : null}
               <Text style={estilos.total}>Total: ${Number(p.total_mxn).toFixed(0)}</Text>
 
-              {tab === "activos" && ["preparando", "listo"].includes(p.estado) ? (
-                <View style={estilos.bloqueQrEtiqueta}>
-                  <QRCode value={p.id} size={64} />
-                  <Text style={estilos.notaQrEtiqueta}>
-                    Ticket del pedido — imprímelo ahora (cuando haya impresora conectada) y escanéalo al entregar
-                  </Text>
-                </View>
-              ) : null}
+              {tab === "activos" && ["preparando", "listo"].includes(p.estado) ? <EtiquetaPedido pedido={p} estilos={estilos} colores={colores} /> : null}
 
               {tab === "pendiente_pago" ? (
                 <View style={estilos.filaBotones}>
@@ -285,6 +300,42 @@ export default function ColaPedidos() {
   );
 }
 
+function EtiquetaPedido({ pedido, estilos, colores }) {
+  const [generando, setGenerando] = useState(false);
+  const [error, setError] = useState("");
+
+  async function generarPdf() {
+    setGenerando(true);
+    setError("");
+    try {
+      await generarYCompartirEtiqueta(pedido);
+    } catch {
+      setError("No se pudo generar el PDF de prueba.");
+    } finally {
+      setGenerando(false);
+    }
+  }
+
+  return (
+    <View style={estilos.bloqueQrEtiqueta}>
+      <QRCode value={pedido.id} size={64} />
+      <View style={{ flex: 1, gap: 4 }}>
+        <Text style={estilos.notaQrEtiqueta}>
+          Ticket del pedido — imprímelo ahora (cuando haya impresora conectada) y escanéalo al entregar
+        </Text>
+        <Pressable onPress={generarPdf} disabled={generando}>
+          {generando ? (
+            <ActivityIndicator color={colores.acento} size="small" />
+          ) : (
+            <Text style={estilos.linkPdf}>Vista previa en PDF (tamaño real 40×60mm)</Text>
+          )}
+        </Pressable>
+        {error ? <Text style={[estilos.error, { fontSize: 11 }]}>{error}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
 function crearEstilos(colores) {
   return StyleSheet.create({
     contenedor: { flex: 1, backgroundColor: colores.fondo },
@@ -307,7 +358,8 @@ function crearEstilos(colores) {
     total: { fontSize: 13, fontWeight: "600", color: colores.texto },
     filaBotones: { flexDirection: "row", gap: 8, marginTop: 6 },
     bloqueQrEtiqueta: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8, padding: 8, backgroundColor: colores.fondo, borderRadius: 8 },
-    notaQrEtiqueta: { flex: 1, fontSize: 11, color: colores.textoMuted, lineHeight: 15 },
+    notaQrEtiqueta: { fontSize: 11, color: colores.textoMuted, lineHeight: 15 },
+    linkPdf: { fontSize: 11.5, color: colores.acento, fontWeight: "600" },
     notaPendientePago: { flex: 1, fontSize: 11.5, color: colores.textoMuted, lineHeight: 15 },
     botonAvanzar: { flex: 1, backgroundColor: colores.acento, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
     textoBoton: { color: "#fff", fontWeight: "600", fontSize: 13 },
