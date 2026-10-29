@@ -179,10 +179,12 @@ export default function ColaPedidos() {
               ) : null}
               <Text style={estilos.total}>Total: ${Number(p.total_mxn).toFixed(0)}</Text>
 
-              {tab === "activos" && p.estado === "listo" ? (
+              {tab === "activos" && ["preparando", "listo"].includes(p.estado) ? (
                 <View style={estilos.bloqueQrEtiqueta}>
                   <QRCode value={p.id} size={64} />
-                  <Text style={estilos.notaQrEtiqueta}>Etiqueta para escanear al entregar (pestaña "Entregar")</Text>
+                  <Text style={estilos.notaQrEtiqueta}>
+                    Ticket del pedido — imprímelo ahora (cuando haya impresora conectada) y escanéalo al entregar
+                  </Text>
                 </View>
               ) : null}
 
