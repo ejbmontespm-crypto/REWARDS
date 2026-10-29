@@ -90,13 +90,22 @@ export function TemaProvider({ children }) {
       setTazaLlenaUrl(resolverUrl(a.taza_llena_url));
       setCroissantGrisUrl(resolverUrl(a.croissant_gris_url));
       setCroissantDoradoUrl(resolverUrl(a.croissant_dorado_url));
+      return true;
     } catch {
-      /* se queda con lo que ya tenía */
+      /* se reintenta una vez en el arranque (ver abajo) — fuera de ahí, se
+         queda con lo que ya tenía, nunca bloquea ni truena */
+      return false;
     }
   }, []);
 
   useEffect(() => {
-    recargar();
+    // Primer intento puede fallar por un arranque en frío del backend
+    // (Railway) justo al abrir la app — sin este reintento, la pantalla se
+    // quedaba pegada en los colores de respaldo toda la sesión, hasta que
+    // alguien tocara "Actualizar apariencia" a mano.
+    recargar().then((ok) => {
+      if (!ok) setTimeout(recargar, 4000);
+    });
   }, [recargar]);
 
   return (

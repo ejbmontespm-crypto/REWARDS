@@ -10,7 +10,7 @@
 // llamada falla, nunca se vea un contorno del color de fondo/marca en vez de
 // un gris neutro — antes "borde" era un rosa fijo heredado del fondo default.
 export const colores = {
-  fondo: "#FFCFFF",
+  fondo: "#FAF8F4",
   superficie: "#FFFFFF",
   texto: "#000000",
   textoMuted: "#6b6b6b",

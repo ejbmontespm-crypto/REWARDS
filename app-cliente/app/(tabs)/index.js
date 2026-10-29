@@ -86,6 +86,7 @@ export default function Inicio() {
   const [error, setError] = useState("");
   const [redimiendo, setRedimiendo] = useState(false);
   const [paginaPedido, setPaginaPedido] = useState(0);
+  const [notificacionesNoLeidas, setNotificacionesNoLeidas] = useState(0);
   const escalaQr = useRef(new Animated.Value(1)).current;
   const escalaCelebracion = useRef(new Animated.Value(1)).current;
   const recompensaListaAnterior = useRef(false);
@@ -94,15 +95,17 @@ export default function Inicio() {
     esRefresh ? setRefrescando(true) : setCargando(true);
     setError("");
     try {
-      const [me, activa, prods] = await Promise.all([
+      const [me, activa, prods, notifs] = await Promise.all([
         api.get("/clientes/me"),
         api.get("/configuracion-recompensa/activa"),
         api.get("/productos"),
+        api.get("/notificaciones/mias"),
       ]);
       setDatos(me);
       setConfig(activa.configuracion);
       const disponibles = prods.productos.filter((p) => p.disponible);
       setPrecioMasBarato(disponibles.length ? Math.min(...disponibles.map((p) => Number(p.precio))) : null);
+      setNotificacionesNoLeidas(notifs.notificaciones.filter((n) => !n.leido_en).length);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo cargar tu información.");
     } finally {
@@ -116,8 +119,9 @@ export default function Inicio() {
   // abierta). No toca cargando/refrescando para no parpadear la pantalla.
   const revisarPedidosSilencioso = useCallback(async () => {
     try {
-      const me = await api.get("/clientes/me");
+      const [me, notifs] = await Promise.all([api.get("/clientes/me"), api.get("/notificaciones/mias")]);
       setDatos(me);
+      setNotificacionesNoLeidas(notifs.notificaciones.filter((n) => !n.leido_en).length);
     } catch {
       /* se reintenta en el siguiente ciclo */
     }
@@ -179,7 +183,14 @@ export default function Inicio() {
       <View style={estilos.encabezado}>
         <Text style={estilos.saludo}>Hola, {datos?.cliente?.nombre}</Text>
         <Pressable style={({ pressed }) => pressed && { opacity: 0.6 }} onPress={() => router.push("/notificaciones")}>
-          <Ionicons name="notifications-outline" size={24} color={colores.texto} />
+          <View>
+            <Ionicons name="notifications-outline" size={24} color={colores.texto} />
+            {notificacionesNoLeidas > 0 ? (
+              <View style={estilos.badgeCampana}>
+                <Text style={estilos.textoBadgeCampana}>{notificacionesNoLeidas > 9 ? "9+" : notificacionesNoLeidas}</Text>
+              </View>
+            ) : null}
+          </View>
         </Pressable>
       </View>
 
@@ -293,6 +304,19 @@ function crearEstilos(colores) {
     centro: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colores.fondo },
     encabezado: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
     saludo: { fontSize: tipografia.lg, fontWeight: "700", color: colores.texto },
+    badgeCampana: {
+      position: "absolute",
+      top: -4,
+      right: -6,
+      minWidth: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: colores.peligro,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingHorizontal: 3,
+    },
+    textoBadgeCampana: { color: "#fff", fontSize: 10, fontWeight: "700" },
     error: { color: colores.peligro, fontSize: 13 },
     // La sombra vive en un View aparte del Pressable — el Pressable necesita
     // overflow:hidden para recortar la imagen a las esquinas redondeadas, y
