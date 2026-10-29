@@ -53,15 +53,19 @@ pagosRouter.post(
       throw conflict("Este pedido ya quedó marcado para pagarse en caja — la forma de pago no se puede cambiar", "metodo_pago_fijo");
     }
 
+    // El puente /pago-retorno (app.js) es lo que de verdad regresa a la app
+    // nativa — Mercado Pago no acepta un esquema lealtadcafe:// directo como
+    // back_url, exige http/https. auto_return: "all" evita que el cliente
+    // tenga que tocar "volver al sitio" él mismo, pase lo que pase con el pago.
+    const urlRetorno = `${env.mercadopagoBackUrl || `${req.protocol}://${req.get("host")}`}/pago-retorno?pedido=${pedido.id}`;
     const preferencia = new Preference(cliente);
     const resultado = await preferencia.create({
       body: {
         items: [{ title: `Pedido Lealtad Café #${pedido.id.slice(0, 8)}`, quantity: 1, unit_price: porPagar, currency_id: "MXN" }],
         external_reference: pedido.id,
         notification_url: env.mercadopagoNotificationUrl || undefined,
-        back_urls: env.mercadopagoBackUrl
-          ? { success: env.mercadopagoBackUrl, failure: env.mercadopagoBackUrl, pending: env.mercadopagoBackUrl }
-          : undefined,
+        back_urls: { success: urlRetorno, failure: urlRetorno, pending: urlRetorno },
+        auto_return: "all",
       },
     });
 
