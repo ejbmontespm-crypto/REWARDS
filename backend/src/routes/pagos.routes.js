@@ -29,8 +29,9 @@ async function obtenerPedidoParaCobrar(pedidoId, req) {
   if (["cancelado", "no_recogido"].includes(pedido.estado)) throw conflict(`Ese pedido ya está en estado "${pedido.estado}"`);
   if (pedido.pago_confirmado) throw conflict("Ese pedido ya está pagado");
 
-  const porPagar = Math.round((Number(pedido.total_mxn) - Number(pedido.creditos_aplicados_mxn || 0)) * 100) / 100;
-  if (porPagar <= 0) throw conflict("Este pedido ya está cubierto por completo con créditos — no hay nada que pagar en línea");
+  const porPagar =
+    Math.round((Number(pedido.total_mxn) - Number(pedido.creditos_aplicados_mxn || 0) - Number(pedido.monedero_aplicado_mxn || 0)) * 100) / 100;
+  if (porPagar <= 0) throw conflict("Este pedido ya está cubierto por completo con créditos/saldo — no hay nada que pagar en línea");
   return { pedido, porPagar };
 }
 

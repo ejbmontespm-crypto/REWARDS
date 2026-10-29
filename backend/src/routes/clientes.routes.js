@@ -77,7 +77,7 @@ clientesRouter.get(
   asyncHandler(async (req, res) => {
     const { rows } = await query(
       `select c.id, c.nombre, c.apellido_paterno, c.apellido_materno, c.telefono, c.correo, c.tipo_perfil,
-              c.notificaciones_activas, c.confirmado_en_ciclo_actual, c.created_at, c.fecha_nacimiento,
+              c.notificaciones_activas, c.confirmado_en_ciclo_actual, c.created_at, c.fecha_nacimiento, c.saldo_monedero_mxn,
               s.creditos_disponibles, s.visitas_disponibles
        from clientes c
        left join saldos_cliente_v s on s.cliente_id = c.id
@@ -138,6 +138,7 @@ clientesRouter.get(
       saldo: {
         creditos_disponibles: Number(cliente.creditos_disponibles || 0),
         visitas_disponibles: Number(cliente.visitas_disponibles || 0),
+        saldo_monedero_mxn: Number(cliente.saldo_monedero_mxn || 0),
       },
       recompensa_lista: recompensaLista,
       solicitud_canje_pendiente: solicitudes[0] || null,

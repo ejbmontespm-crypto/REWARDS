@@ -3,6 +3,7 @@ import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linki
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
+import { mostrarToast } from "../../lib/toast";
 import PedidoProgreso, { PASOS_PEDIDO } from "../../components/PedidoProgreso";
 
 export default function DetallePedido() {
@@ -73,14 +74,17 @@ function TarjetaPedido({ pedido, colores, estilos, router, onCambio }) {
 
   const esPendientePago = pedido.estado === "pendiente_pago";
   const esEstadoFinalDistinto = !esPendientePago && !PASOS_PEDIDO.includes(pedido.estado);
-  const porPagar = Number(pedido.total_mxn) - Number(pedido.creditos_aplicados_mxn || 0);
+  const porPagar = Number(pedido.total_mxn) - Number(pedido.creditos_aplicados_mxn || 0) - Number(pedido.monedero_aplicado_mxn || 0);
   const cantidadProductos = pedido.items?.reduce((s, i) => s + i.cantidad, 0) || 0;
 
   async function cancelar() {
     setCancelando(true);
     setError("");
     try {
-      await api.post(`/pedidos/${pedido.id}/cancelar`, {});
+      const { saldo_generado_mxn } = await api.post(`/pedidos/${pedido.id}/cancelar`, {});
+      if (saldo_generado_mxn) {
+        mostrarToast(`✓ Pedido cancelado — $${Number(saldo_generado_mxn).toFixed(0)} de saldo a favor para tu siguiente compra`);
+      }
       router.back();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo cancelar el pedido.");
@@ -151,6 +155,9 @@ function TarjetaPedido({ pedido, colores, estilos, router, onCambio }) {
         <Text style={estilos.total}>Total: ${Number(pedido.total_mxn).toFixed(0)}</Text>
         {Number(pedido.creditos_aplicados_mxn) > 0 ? (
           <Text style={estilos.detalle}>Créditos aplicados: ${Number(pedido.creditos_aplicados_mxn).toFixed(0)}</Text>
+        ) : null}
+        {Number(pedido.monedero_aplicado_mxn) > 0 ? (
+          <Text style={estilos.detalle}>Saldo a favor aplicado: ${Number(pedido.monedero_aplicado_mxn).toFixed(0)}</Text>
         ) : null}
         <Text style={estilos.detalle}>{pedido.metodo_pago === "liga_mp" ? "Forma de pago: en línea (Mercado Pago)" : "Forma de pago: en caja"}</Text>
         {pedido.pago_confirmado ? <Text style={estilos.pagado}>✓ Pagado en línea</Text> : null}

@@ -87,7 +87,7 @@ pedidosRouter.post(
   requireClienteAuth,
   asyncHandler(async (req, res) => {
     const cliente_id = req.cliente.id;
-    const { items, hora_pickup, creditos_aplicados_mxn, metodo_pago, canjear_producto_id } = req.body || {};
+    const { items, hora_pickup, creditos_aplicados_mxn, monedero_aplicado_mxn, metodo_pago, canjear_producto_id } = req.body || {};
 
     if (!Array.isArray(items) || items.length === 0) throw badRequest("El carrito no puede venir vacío");
     if (!hora_pickup || Number.isNaN(Date.parse(hora_pickup))) throw badRequest("hora_pickup inválida");
@@ -189,15 +189,31 @@ pedidosRouter.post(
     try {
       await client.query("begin");
 
+      // Saldo a favor (monedero) — a diferencia de los créditos de
+      // recompensa, esto SÍ es dinero real que el negocio ya tiene (viene de
+      // cancelaciones de pedidos pagados), así que se descuenta de una vez
+      // aquí mismo, dentro de la transacción, releyendo el saldo real para
+      // no confiar en lo que calculó el celular.
+      let monederoAplicado = 0;
+      if (monedero_aplicado_mxn) {
+        const { rows: clienteRows } = await client.query(`select saldo_monedero_mxn from clientes where id = $1 for update`, [cliente_id]);
+        const saldoMonedero = Number(clienteRows[0]?.saldo_monedero_mxn || 0);
+        monederoAplicado = Math.min(Number(monedero_aplicado_mxn), saldoMonedero, totalMxn - creditosAplicados);
+        monederoAplicado = Math.max(0, Math.round(monederoAplicado * 100) / 100);
+        if (monederoAplicado > 0) {
+          await client.query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn - $2 where id = $1`, [cliente_id, monederoAplicado]);
+        }
+      }
+
       // Un pedido por liga de pago no entra a cocina hasta que el webhook de
       // Mercado Pago confirme el pago — "pendiente_pago" lo deja fuera de
       // ESTADOS_ACTIVOS (invisible en la Cola del staff) mientras tanto, para
       // no preparar algo que a lo mejor nunca se pagó.
       const estadoInicial = metodo_pago === "liga_mp" ? "pendiente_pago" : "recibido";
       const { rows: pedidoRows } = await client.query(
-        `insert into pedidos (cliente_id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn, metodo_pago)
-         values ($1, $2, $3, $4, $5, $6) returning *`,
-        [cliente_id, estadoInicial, hora_pickup, totalMxn, creditosAplicados, metodo_pago || "caja"]
+        `insert into pedidos (cliente_id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn, monedero_aplicado_mxn, metodo_pago)
+         values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+        [cliente_id, estadoInicial, hora_pickup, totalMxn, creditosAplicados, monederoAplicado, metodo_pago || "caja"]
       );
       const pedido = pedidoRows[0];
 
@@ -464,11 +480,24 @@ pedidosRouter.post(
       if (!["recibido", "pendiente_pago"].includes(pedido.estado)) {
         throw conflict('Ya no se puede cancelar — el staff ya empezó a prepararlo. Pásate a caja.');
       }
+
+      // Si ya estaba pagado en línea, el dinero real que Mercado Pago cobró
+      // (todo menos la porción de créditos de recompensa, que es otro
+      // sistema aparte) regresa como saldo a favor — no hay reembolso real
+      // a la tarjeta, solo saldo usable en la próxima compra.
+      let saldoGenerado = 0;
+      if (pedido.pago_confirmado) {
+        saldoGenerado = Math.round((Number(pedido.total_mxn) - Number(pedido.creditos_aplicados_mxn || 0)) * 100) / 100;
+        if (saldoGenerado > 0) {
+          await query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [pedido.cliente_id, saldoGenerado]);
+        }
+      }
+
       const { rows: updRows } = await query(
         `update pedidos set estado = 'cancelado', updated_at = now() where id = $1 returning *`,
         [req.params.id]
       );
-      return res.json({ pedido: updRows[0], penalizacion: null });
+      return res.json({ pedido: updRows[0], penalizacion: null, saldo_generado_mxn: saldoGenerado || undefined });
     }
 
     const { con_penalizacion, pin, motivo } = req.body || {};

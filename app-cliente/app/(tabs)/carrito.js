@@ -38,6 +38,7 @@ export default function Carrito() {
   const [promosVentana, setPromosVentana] = useState({});
   const [slotElegido, setSlotElegido] = useState(null);
   const [aplicarCreditos, setAplicarCreditos] = useState(false);
+  const [aplicarMonedero, setAplicarMonedero] = useState(false);
   const [productoCanjeado, setProductoCanjeado] = useState(null);
   const [metodoPago, setMetodoPago] = useState("caja"); // "caja" | "mercadopago"
   const [enviando, setEnviando] = useState(false);
@@ -69,6 +70,13 @@ export default function Carrito() {
   const saldoDisponibleMxn = puedeAplicarCreditos ? Number(saldo.creditos_disponibles) * Number(config.valor_cd_mxn) : 0;
   const creditosAplicadosMxn = aplicarCreditos ? Math.min(saldoDisponibleMxn, total) : 0;
 
+  // Saldo a favor (monedero) — independiente de la modalidad de recompensa,
+  // viene de pedidos pagados en línea que luego se cancelaron.
+  const puedeAplicarMonedero = Number(saldo?.saldo_monedero_mxn) > 0;
+  const monederoAplicadoMxn = aplicarMonedero
+    ? Math.min(Number(saldo?.saldo_monedero_mxn || 0), Math.max(0, total - creditosAplicadosMxn))
+    : 0;
+
   // Canje de producto gratis en línea (modalidades credito_umbral/visitas) —
   // se revalida en el backend al confirmar, esto es solo para mostrar la
   // opción; nunca se confía en esto para el descuento real.
@@ -78,7 +86,7 @@ export default function Carrito() {
   const productosElegibles = puedeCanjearProducto ? config.productos_elegibles || [] : [];
   const productoElegidoInfo = productosElegibles.find((p) => p.id === productoCanjeado);
 
-  const porPagarEnCaja = Math.max(0, total - creditosAplicadosMxn);
+  const porPagarEnCaja = Math.max(0, total - creditosAplicadosMxn - monederoAplicadoMxn);
 
   async function confirmar() {
     setError("");
@@ -90,6 +98,7 @@ export default function Carrito() {
         items: items.map((i) => ({ producto_id: i.producto_id, cantidad: i.cantidad, extra_ids: i.extras.map((e) => e.id) })),
         hora_pickup: slotElegido.toISOString(),
         creditos_aplicados_mxn: creditosAplicadosMxn || undefined,
+        monedero_aplicado_mxn: monederoAplicadoMxn || undefined,
         metodo_pago: metodoPago === "mercadopago" ? "liga_mp" : "caja",
         canjear_producto_id: productoCanjeado || undefined,
       });
@@ -176,6 +185,14 @@ export default function Carrito() {
             </Pressable>
           ) : null}
 
+          {puedeAplicarMonedero ? (
+            <Pressable style={estilos.filaCreditos} onPress={() => setAplicarMonedero((v) => !v)}>
+              <Text style={estilos.itemNombre}>
+                {aplicarMonedero ? "☑" : "☐"} Usar tu saldo a favor (tienes ${Number(saldo.saldo_monedero_mxn).toFixed(0)})
+              </Text>
+            </Pressable>
+          ) : null}
+
           {productosElegibles.length > 0 ? (
             <View style={{ gap: 8 }}>
               <Text style={estilos.seccionTitulo}>🎉 Tu recompensa está lista — elige tu gratis</Text>
@@ -219,10 +236,11 @@ export default function Carrito() {
           <View style={estilos.resumen}>
             <FilaResumen estilos={estilos} etiqueta="Total" valor={total} />
             {creditosAplicadosMxn > 0 ? <FilaResumen estilos={estilos} etiqueta="Cubierto con créditos" valor={-creditosAplicadosMxn} /> : null}
+            {monederoAplicadoMxn > 0 ? <FilaResumen estilos={estilos} etiqueta="Cubierto con tu saldo" valor={-monederoAplicadoMxn} /> : null}
             {productoElegidoInfo ? <Text style={estilos.notaVentana}>🎁 {productoElegidoInfo.nombre} — gratis con tu recompensa</Text> : null}
             <FilaResumen
               estilos={estilos}
-              etiqueta={porPagarEnCaja <= 0 ? "Cubierto con créditos" : metodoPago === "mercadopago" ? "Por pagar en línea" : "Por pagar en caja"}
+              etiqueta={porPagarEnCaja <= 0 ? "Cubierto" : metodoPago === "mercadopago" ? "Por pagar en línea" : "Por pagar en caja"}
               valor={porPagarEnCaja}
               destacado
             />
