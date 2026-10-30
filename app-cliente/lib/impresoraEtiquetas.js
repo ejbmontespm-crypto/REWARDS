@@ -1,5 +1,7 @@
 // Impresión directa por Bluetooth clásico (SPP) a una impresora de
-// etiquetas TSPL — Xprinter XP-365B y compatibles. Separado por completo
+// etiquetas TSPL — modelo real en uso: OCBP-401DT (viene con código de
+// páginas chino PC936/GB18030 de fábrica, ver CODEPAGE UTF-8 más abajo).
+// Separado por completo
 // de etiquetaPedido.js (que genera el PDF de vista previa/respaldo): acá
 // se arman los comandos TSPL crudos, en texto plano, que se mandan tal
 // cual al puerto serie del dispositivo ya emparejado.
@@ -71,6 +73,12 @@ export function construirComandosTspl(pedido) {
       "SIZE 40 mm,60 mm",
       "GAP 2 mm,0 mm",
       "DIRECTION 0",
+      // Esta impresora trae de fábrica la página de códigos china PC936
+      // (GB18030) — sin forzar UTF-8, el texto latino puede caer en la
+      // tabla de fuente equivocada y salir como bloques negros en vez de
+      // caracteres legibles (se ve el QR bien porque ese comando no pasa
+      // por la tabla de fuentes de texto).
+      "CODEPAGE UTF-8",
       "CLS",
     ];
     if (i === 0) comandos.push(`QRCODE 108,16,"M",4,"A",0,"${pedido.id}"`);
@@ -88,9 +96,18 @@ export function construirComandosTspl(pedido) {
   });
 }
 
-/** Conecta, manda los comandos, desconecta — una conexión nueva por cada
- *  impresión en vez de mantenerla abierta, para no arrastrar un socket
- *  colgado entre un pedido y el siguiente (pueden pasar minutos/horas). */
+/** Mantiene la conexión abierta entre una impresión y la siguiente, en vez
+ *  de conectar/desconectar cada vez — hay impresoras TSPL baratas que no
+ *  toleran bien reconexiones seguidas (algunas quedan en un estado raro y
+ *  necesitan hasta reiniciarse para volver a aceptar conexión). Si la
+ *  escritura falla (por ejemplo, porque la conexión se cayó sola mientras
+ *  no se usaba), se reintenta UNA vez forzando una reconexión limpia. */
+async function escribirBloques(direccion, bloques) {
+  for (const bloque of bloques) {
+    await RNBluetoothClassic.writeToDevice(direccion, bloque);
+  }
+}
+
 export async function imprimirEtiquetaDirecto(pedido) {
   const config = await obtenerConfigImpresora();
   if (!config.direccion) throw new Error("No hay impresora configurada.");
@@ -98,11 +115,12 @@ export async function imprimirEtiquetaDirecto(pedido) {
   const bloques = construirComandosTspl(pedido);
   const yaConectado = await RNBluetoothClassic.isDeviceConnected(config.direccion);
   if (!yaConectado) await RNBluetoothClassic.connectToDevice(config.direccion);
+
   try {
-    for (const bloque of bloques) {
-      await RNBluetoothClassic.writeToDevice(config.direccion, bloque);
-    }
-  } finally {
+    await escribirBloques(config.direccion, bloques);
+  } catch (err) {
     await RNBluetoothClassic.disconnectFromDevice(config.direccion).catch(() => {});
+    await RNBluetoothClassic.connectToDevice(config.direccion);
+    await escribirBloques(config.direccion, bloques);
   }
 }
