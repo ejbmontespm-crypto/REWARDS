@@ -1,6 +1,6 @@
 import { api, ApiError } from "../api.js";
 import { renderShell } from "../layout.js";
-import { spinner, bannerError, escapar, toast, abrirModal, cerrarModal, formatoFecha, formatoMXN } from "../ui.js";
+import { spinner, bannerError, escapar, toast, abrirModal, cerrarModal, formatoFecha, formatoFechaHora, formatoMXN } from "../ui.js";
 import { iconos } from "../icons.js";
 
 const PERFILES = [
@@ -18,6 +18,16 @@ const DIAS_SEMANA = [
   { valor: 5, texto: "Vie" },
   { valor: 6, texto: "Sáb" },
 ];
+
+const ETIQUETA_NATURALEZA = { credito_regalo: "Crédito de regalo", bebida_regalo: "Bebida de regalo" };
+const ETIQUETA_FILTRO = { clientes: "Clientes específicos", perfil: "Por tipo de perfil", todos: "Todos los clientes" };
+const ETIQUETA_PERFIL = { alumno: "Alumno", docente: "Docente", otro: "Otro" };
+const ETIQUETA_ALCANCE = {
+  producto_unico: "1 producto",
+  varios_productos: "Varios productos",
+  categoria_completa: "Toda una categoría",
+  todo_el_menu: "Todo el menú",
+};
 
 function estadoPromo(p) {
   if (!p.activa) return { texto: "Pausada", clase: "badge-neutral" };
@@ -45,6 +55,19 @@ function textoVentana(p) {
   return `${dias} · ${p.hora_inicio}–${p.hora_fin}`;
 }
 
+function textoAlcance(p) {
+  if (p.alcance_tipo === "producto_unico") return p.producto_nombre || "—";
+  if (p.alcance_tipo === "varios_productos") return (p.producto_ids_nombres || []).join(", ") || "—";
+  if (p.alcance_tipo === "categoria_completa") return `Categoría: ${p.alcance_categoria_nombre || "—"}`;
+  if (p.alcance_tipo === "todo_el_menu") return "Todo el menú";
+  return "—";
+}
+
+function textoQuien(p) {
+  const base = ETIQUETA_FILTRO[p.filtro_tipo] || p.filtro_tipo;
+  return p.filtro_perfil ? `${base} (${ETIQUETA_PERFIL[p.filtro_perfil]})` : base;
+}
+
 export async function render() {
   const content = renderShell("promociones", "Promociones");
   await cargarYPintar(content);
@@ -61,15 +84,21 @@ async function cargarYPintar(content) {
 }
 
 function pintar(content, promociones) {
+  const informativas = promociones.filter((p) => p.naturaleza === "informativa");
+  const campanas = promociones.filter((p) => p.naturaleza !== "informativa");
+
   content.innerHTML = `
+    <div class="banner banner-warning">
+      <div>Las campañas de crédito/bebida de regalo NO son una regla que se evalúa sola (como la de cumpleaños) — al aplicarlas, el saldo se carga de inmediato a los clientes elegidos, en el momento, sin forma de deshacerlo salvo ajustándolo a mano. Por eso no se pueden editar ni borrar una vez aplicadas.</div>
+    </div>
     <div class="toolbar">
       <div class="toolbar-title" style="font-size:14px;font-weight:600;">${promociones.length} promoción${promociones.length === 1 ? "" : "es"}</div>
       <button class="btn btn-primary" id="btn-nueva">${iconos.mas(14)} Nueva promoción</button>
     </div>
     ${
-      promociones.length
-        ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
-            ${promociones
+      informativas.length
+        ? `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
+            ${informativas
               .map((p) => {
                 const est = estadoPromo(p);
                 return `
@@ -87,6 +116,7 @@ function pintar(content, promociones) {
                         : ""
                     }
                     ${textoVentana(p) ? `<div style="font-size:11.5px;color:#726c60;">⏱ ${escapar(textoVentana(p))}</div>` : ""}
+                    ${p.solo_cumpleanos ? `<div style="font-size:11.5px;color:#b4690e;">🎂 Solo cumpleañeros</div>` : ""}
                     <div style="display:flex;align-items:center;justify-content:space-between;padding-top:10px;border-top:1px solid #eeece7;margin-top:2px;">
                       <span class="badge ${est.clase}">${est.texto}</span>
                       <div style="display:flex;gap:6px;">
@@ -100,13 +130,38 @@ function pintar(content, promociones) {
               })
               .join("")}
           </div>`
-        : `<div class="empty-state">Sin promociones todavía.</div>`
+        : `<div class="empty-state">Sin promociones informativas todavía.</div>`
     }
+    <div class="toolbar-title" style="font-size:13px;font-weight:600;margin:4px 0 10px;">Campañas de saldo/bebida aplicadas</div>
+    <div class="card" style="padding:0;">
+      <table class="data">
+        <tr><th>Fecha</th><th>Nombre</th><th>Tipo</th><th>Monto</th><th>Alcance</th><th>A quién</th><th>Clientes</th><th>Por</th></tr>
+        ${
+          campanas.length
+            ? campanas
+                .map(
+                  (p) => `
+          <tr>
+            <td class="muted">${formatoFechaHora(p.aplicada_en || p.created_at)}</td>
+            <td>${escapar(p.titulo)}</td>
+            <td>${ETIQUETA_NATURALEZA[p.naturaleza] || p.naturaleza}</td>
+            <td class="mono-cell">${formatoMXN(p.monto_mxn)}</td>
+            <td>${escapar(textoAlcance(p))}</td>
+            <td>${escapar(textoQuien(p))}</td>
+            <td class="mono-cell">${p.cantidad_clientes_aplicados}</td>
+            <td class="muted">${escapar(p.creado_por_nombre || "—")}</td>
+          </tr>`
+                )
+                .join("")
+            : `<tr><td colspan="8" class="table-empty">Sin campañas aplicadas todavía.</td></tr>`
+        }
+      </table>
+    </div>
   `;
 
-  document.getElementById("btn-nueva").addEventListener("click", () => formularioPromocion(content));
+  document.getElementById("btn-nueva").addEventListener("click", () => elegirNaturaleza(content));
   content.querySelectorAll(".btn-editar-promo").forEach((b) =>
-    b.addEventListener("click", () => formularioPromocion(content, promociones.find((p) => p.id === b.dataset.id)))
+    b.addEventListener("click", () => formularioInformativa(content, informativas.find((p) => p.id === b.dataset.id)))
   );
   content.querySelectorAll(".btn-borrar-promo").forEach((b) =>
     b.addEventListener("click", async () => {
@@ -135,7 +190,47 @@ function pintar(content, promociones) {
   );
 }
 
-async function formularioPromocion(content, promo) {
+// ---------------------------------------------------------------------
+// Paso 1 al crear: elegir qué naturaleza de promoción se va a armar.
+// ---------------------------------------------------------------------
+function elegirNaturaleza(content) {
+  const modal = abrirModal(`
+    <h2 style="font-size:15px;margin:0 0 16px;">Nueva promoción</h2>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button type="button" class="card btn-elegir-naturaleza" data-naturaleza="informativa" style="text-align:left;cursor:pointer;border:1px solid #e6e2db;">
+        <div style="font-weight:600;font-size:13.5px;">Informativa</div>
+        <div style="font-size:12px;color:#726c60;margin-top:2px;">Banner que se autoevalúa por vigencia, horario o cumpleaños. Puede incluir un producto pedible desde el menú.</div>
+      </button>
+      <button type="button" class="card btn-elegir-naturaleza" data-naturaleza="credito_regalo" style="text-align:left;cursor:pointer;border:1px solid #e6e2db;">
+        <div style="font-weight:600;font-size:13.5px;">Crédito de regalo</div>
+        <div style="font-size:12px;color:#726c60;margin-top:2px;">Carga saldo en pesos de inmediato a los clientes que elijas.</div>
+      </button>
+      <button type="button" class="card btn-elegir-naturaleza" data-naturaleza="bebida_regalo" style="text-align:left;cursor:pointer;border:1px solid #e6e2db;">
+        <div style="font-weight:600;font-size:13.5px;">Bebida de regalo</div>
+        <div style="font-size:12px;color:#726c60;margin-top:2px;">Carga de inmediato el equivalente en saldo al producto (o al más caro del alcance elegido).</div>
+      </button>
+    </div>
+    <div class="form-actions" style="margin-top:16px;">
+      <button type="button" class="btn btn-secondary" id="modal-cancelar">Cancelar</button>
+    </div>
+  `);
+  modal.querySelector("#modal-cancelar").addEventListener("click", cerrarModal);
+  modal.querySelectorAll(".btn-elegir-naturaleza").forEach((b) =>
+    b.addEventListener("click", () => {
+      const naturaleza = b.dataset.naturaleza;
+      cerrarModal();
+      if (naturaleza === "informativa") formularioInformativa(content);
+      else formularioCampanaManual(content, naturaleza);
+    })
+  );
+}
+
+// ---------------------------------------------------------------------
+// Formulario de promoción informativa (crear y editar) — igual al de
+// siempre, naturaleza siempre "informativa" (las campañas manuales no
+// se editan).
+// ---------------------------------------------------------------------
+async function formularioInformativa(content, promo) {
   const editando = Boolean(promo);
   const segmentosActuales = new Set(promo?.segmentos || []);
 
@@ -147,7 +242,7 @@ async function formularioPromocion(content, promo) {
   }
 
   const modal = abrirModal(`
-    <h2 style="font-size:15px;margin:0 0 16px;">${editando ? "Editar" : "Nueva"} promoción</h2>
+    <h2 style="font-size:15px;margin:0 0 16px;">${editando ? "Editar" : "Nueva"} promoción informativa</h2>
     <form id="form-promo">
       <div class="form-row"><label class="form-label">Título</label><input class="form-input" name="titulo" value="${promo ? escapar(promo.titulo) : ""}" required /></div>
       <div class="form-row"><label class="form-label">Descripción</label><textarea class="form-input" name="descripcion" rows="2" style="resize:vertical;">${promo?.descripcion ? escapar(promo.descripcion) : ""}</textarea></div>
@@ -326,6 +421,7 @@ async function formularioPromocion(content, promo) {
     }
 
     const datos = {
+      naturaleza: "informativa",
       titulo: form.get("titulo"),
       descripcion: form.get("descripcion") || null,
       tipo_archivo: form.get("tipo_archivo"),
@@ -366,6 +462,233 @@ async function formularioPromocion(content, promo) {
       await cargarYPintar(content);
     } catch (err) {
       const mensaje = err instanceof ApiError ? err.message : "No se pudo guardar.";
+      modal.querySelector("#modal-error").innerHTML = `<div class="form-error">${escapar(mensaje)}</div>`;
+    }
+  });
+}
+
+// ---------------------------------------------------------------------
+// Formulario de campaña manual (crédito o bebida de regalo) — se aplica
+// de inmediato al enviar, no queda pendiente ni se puede editar después.
+// ---------------------------------------------------------------------
+function formularioCampanaManual(content, naturaleza) {
+  let clientesSeleccionados = []; // [{id, nombre, apellido_paterno}]
+  let productos = [];
+  let categorias = [];
+
+  const esBebida = naturaleza === "bebida_regalo";
+
+  const modal = abrirModal(`
+    <h2 style="font-size:15px;margin:0 0 16px;">Nueva campaña — ${ETIQUETA_NATURALEZA[naturaleza]}</h2>
+    <form id="form-promo">
+      <div class="form-row">
+        <label class="form-label">Nombre de la campaña</label>
+        <input class="form-input" name="titulo" placeholder="Ej. Día del Maestro 2026" required />
+      </div>
+
+      ${
+        esBebida
+          ? `
+      <div class="form-row">
+        <label class="form-label">Alcance de productos</label>
+        <select class="form-select" name="alcance_tipo" id="select-alcance">
+          <option value="producto_unico">1 producto</option>
+          <option value="varios_productos">Varios productos específicos</option>
+          <option value="categoria_completa">Toda una categoría</option>
+          <option value="todo_el_menu">Todo el menú</option>
+        </select>
+        <span class="form-hint">Se acredita como saldo el precio del producto elegido — o el precio MÁS ALTO entre los productos del alcance, si eliges varios/categoría/todo el menú.</span>
+      </div>
+      <div class="form-row" id="fila-producto-unico">
+        <label class="form-label">Producto</label>
+        <select class="form-select" name="producto_id" id="select-producto-unico"><option value="">Cargando…</option></select>
+      </div>
+      <div class="form-row" id="fila-productos-varios" style="display:none;">
+        <label class="form-label">Productos (elige 2 o más)</label>
+        <div id="lista-productos-varios" style="max-height:160px;overflow:auto;border:1px solid #e6e2db;border-radius:8px;padding:8px;"></div>
+      </div>
+      <div class="form-row" id="fila-categoria" style="display:none;">
+        <label class="form-label">Categoría</label>
+        <select class="form-select" name="alcance_categoria_id" id="select-categoria"><option value="">Cargando…</option></select>
+      </div>`
+          : `
+      <div class="form-row">
+        <label class="form-label">Monto por cliente (MXN)</label>
+        <input class="form-input mono" type="number" step="0.01" min="0" name="monto_mxn" />
+      </div>`
+      }
+
+      <div class="form-row">
+        <label class="form-label">¿A quién se le carga?</label>
+        <select class="form-select" name="filtro_tipo" id="select-filtro">
+          <option value="clientes">Clientes específicos</option>
+          <option value="perfil">Por tipo de perfil</option>
+          <option value="todos">Todos los clientes</option>
+        </select>
+      </div>
+
+      <div class="form-row" id="fila-perfil" style="display:none;">
+        <label class="form-label">Tipo de perfil</label>
+        <select class="form-select" name="filtro_perfil">
+          <option value="alumno">Alumno</option>
+          <option value="docente">Docente</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+
+      <div id="fila-clientes">
+        <label class="form-label">Buscar clientes</label>
+        <input class="form-input" id="input-buscar-cliente" placeholder="Nombre, teléfono o correo…" />
+        <div id="resultados-busqueda" style="margin-top:6px;"></div>
+        <div id="chips-clientes" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;"></div>
+      </div>
+
+      <div id="modal-error"></div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" id="modal-cancelar">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Aplicar ahora</button>
+      </div>
+    </form>
+  `);
+
+  if (esBebida) {
+    api
+      .get("/productos")
+      .then((d) => {
+        productos = d.productos;
+        modal.querySelector("#select-producto-unico").innerHTML = productos
+          .map((p) => `<option value="${p.id}">${escapar(p.nombre)} — ${formatoMXN(p.precio)}</option>`)
+          .join("");
+        pintarListaProductosVarios();
+      })
+      .catch(() => {});
+    api
+      .get("/categorias-producto")
+      .then((d) => {
+        categorias = d.categorias;
+        modal.querySelector("#select-categoria").innerHTML = categorias.map((c) => `<option value="${c.id}">${escapar(c.nombre)}</option>`).join("");
+      })
+      .catch(() => {});
+
+    function pintarListaProductosVarios() {
+      const cont = modal.querySelector("#lista-productos-varios");
+      cont.innerHTML = productos
+        .map(
+          (p) => `
+        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;">
+          <input type="checkbox" name="producto_ids" value="${p.id}" /> ${escapar(p.nombre)} — ${formatoMXN(p.precio)}
+        </label>`
+        )
+        .join("");
+    }
+
+    modal.querySelector("#select-alcance").addEventListener("change", (ev) => {
+      const valor = ev.target.value;
+      modal.querySelector("#fila-producto-unico").style.display = valor === "producto_unico" ? "flex" : "none";
+      modal.querySelector("#fila-productos-varios").style.display = valor === "varios_productos" ? "block" : "none";
+      modal.querySelector("#fila-categoria").style.display = valor === "categoria_completa" ? "flex" : "none";
+    });
+  }
+
+  function pintarChips() {
+    const cont = modal.querySelector("#chips-clientes");
+    cont.innerHTML = clientesSeleccionados
+      .map(
+        (c) => `
+      <span class="badge badge-neutral" style="display:inline-flex;align-items:center;gap:6px;">
+        ${escapar(c.nombre)} ${escapar(c.apellido_paterno)}
+        <span data-quitar="${c.id}" style="cursor:pointer;font-weight:700;">×</span>
+      </span>`
+      )
+      .join("");
+    cont.querySelectorAll("[data-quitar]").forEach((el) =>
+      el.addEventListener("click", () => {
+        clientesSeleccionados = clientesSeleccionados.filter((c) => c.id !== el.dataset.quitar);
+        pintarChips();
+      })
+    );
+  }
+
+  modal.querySelector("#select-filtro").addEventListener("change", (ev) => {
+    const valor = ev.target.value;
+    modal.querySelector("#fila-perfil").style.display = valor === "perfil" ? "flex" : "none";
+    modal.querySelector("#fila-clientes").style.display = valor === "clientes" ? "block" : "none";
+  });
+
+  let buscandoTimeout = null;
+  modal.querySelector("#input-buscar-cliente").addEventListener("input", (ev) => {
+    clearTimeout(buscandoTimeout);
+    const termino = ev.target.value.trim();
+    const resultados = modal.querySelector("#resultados-busqueda");
+    if (!termino) {
+      resultados.innerHTML = "";
+      return;
+    }
+    buscandoTimeout = setTimeout(async () => {
+      try {
+        const { clientes } = await api.get("/clientes", { query: { buscar: termino } });
+        resultados.innerHTML = clientes
+          .filter((c) => !clientesSeleccionados.some((s) => s.id === c.id))
+          .slice(0, 8)
+          .map((c) => `<div class="icon-btn" data-agregar='${JSON.stringify(c).replace(/'/g, "&apos;")}' style="cursor:pointer;padding:6px 4px;font-size:12.5px;">+ ${escapar(c.nombre)} ${escapar(c.apellido_paterno)} — ${escapar(c.correo || c.telefono || "")}</div>`)
+          .join("");
+        resultados.querySelectorAll("[data-agregar]").forEach((el) =>
+          el.addEventListener("click", () => {
+            clientesSeleccionados.push(JSON.parse(el.dataset.agregar));
+            pintarChips();
+            resultados.innerHTML = "";
+            modal.querySelector("#input-buscar-cliente").value = "";
+          })
+        );
+      } catch {
+        /* se ignora, el staff puede reintentar la búsqueda */
+      }
+    }, 300);
+  });
+
+  modal.querySelector("#modal-cancelar").addEventListener("click", cerrarModal);
+  modal.querySelector("#form-promo").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const form = new FormData(ev.target);
+    const filtroTipo = form.get("filtro_tipo");
+
+    if (filtroTipo === "clientes" && clientesSeleccionados.length === 0) {
+      return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Agrega al menos un cliente.</div>`);
+    }
+    if (esBebida) {
+      const alcanceTipo = form.get("alcance_tipo");
+      if (alcanceTipo === "varios_productos" && form.getAll("producto_ids").length === 0) {
+        return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Elige al menos un producto.</div>`);
+      }
+      if (alcanceTipo === "categoria_completa" && !form.get("alcance_categoria_id")) {
+        return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Elige una categoría.</div>`);
+      }
+    }
+    if (!confirm(`¿Aplicar "${form.get("titulo")}" ya mismo? Esto carga el saldo de inmediato, no se puede deshacer solo.`)) return;
+
+    const datos = {
+      naturaleza,
+      titulo: form.get("titulo"),
+      filtro_tipo: filtroTipo,
+      filtro_perfil: filtroTipo === "perfil" ? form.get("filtro_perfil") : undefined,
+      clientes_ids: filtroTipo === "clientes" ? clientesSeleccionados.map((c) => c.id) : undefined,
+    };
+    if (esBebida) {
+      datos.alcance_tipo = form.get("alcance_tipo");
+      datos.producto_id = datos.alcance_tipo === "producto_unico" ? form.get("producto_id") : undefined;
+      datos.producto_ids = datos.alcance_tipo === "varios_productos" ? form.getAll("producto_ids") : undefined;
+      datos.alcance_categoria_id = datos.alcance_tipo === "categoria_completa" ? form.get("alcance_categoria_id") : undefined;
+    } else {
+      datos.monto_mxn = Number(form.get("monto_mxn"));
+    }
+
+    try {
+      const { clientes_afectados } = await api.post("/promociones", datos);
+      cerrarModal();
+      toast(`✓ Saldo cargado a ${clientes_afectados} cliente${clientes_afectados === 1 ? "" : "s"}`);
+      await cargarYPintar(content);
+    } catch (err) {
+      const mensaje = err instanceof ApiError ? err.message : "No se pudo aplicar la campaña.";
       modal.querySelector("#modal-error").innerHTML = `<div class="form-error">${escapar(mensaje)}</div>`;
     }
   });

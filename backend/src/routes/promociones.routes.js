@@ -12,6 +12,143 @@ const PERFILES = ["alumno", "docente", "otro"];
 const DIAS_SEMANA_VALIDOS = [0, 1, 2, 3, 4, 5, 6];
 const esHora = (s) => typeof s === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 
+// Naturaleza de la promoción (fase B, unificación de Promociones + Saldo y
+// recompensas): "informativa" es el banner de siempre (autoevaluado por
+// vigencia/horario/cumpleaños); "credito_regalo"/"bebida_regalo" son
+// campañas puntuales que el admin dispara YA MISMO a una lista de clientes
+// (lo que antes vivía aparte, en promos_saldo_historial) — se guardan en
+// esta misma tabla como un registro ya ejecutado, no editable.
+const NATURALEZAS = ["informativa", "credito_regalo", "bebida_regalo"];
+const ALCANCES = ["producto_unico", "varios_productos", "categoria_completa", "todo_el_menu"];
+const FILTROS = ["clientes", "perfil", "todos"];
+
+/**
+ * Para "bebida_regalo": el monto que se acredita al monedero es el precio
+ * del producto (si el alcance es uno solo) o el precio MÁS ALTO entre los
+ * productos del alcance elegido — así el cliente puede cambiar ese crédito
+ * por cualquiera de los productos incluidos sin que la promo salga perdiendo.
+ */
+async function resolverMontoBebidaRegalo({ alcance_tipo, producto_id, producto_ids, alcance_categoria_id }) {
+  if (alcance_tipo === "producto_unico") {
+    const { rows } = await query(`select precio from productos where id = $1`, [producto_id]);
+    if (!rows[0]) throw notFound("Producto no encontrado");
+    return Number(rows[0].precio);
+  }
+  if (alcance_tipo === "varios_productos") {
+    const { rows } = await query(`select max(precio) as max from productos where id = any($1::uuid[])`, [producto_ids]);
+    if (rows[0].max == null) throw badRequest("Ninguno de esos productos existe");
+    return Number(rows[0].max);
+  }
+  if (alcance_tipo === "categoria_completa") {
+    const { rows } = await query(`select max(precio) as max from productos where categoria_id = $1 and disponible = true`, [
+      alcance_categoria_id,
+    ]);
+    if (rows[0].max == null) throw badRequest("Esa categoría no tiene productos disponibles");
+    return Number(rows[0].max);
+  }
+  const { rows } = await query(`select max(precio) as max from productos where disponible = true`);
+  if (rows[0].max == null) throw badRequest("No hay productos disponibles en el menú");
+  return Number(rows[0].max);
+}
+
+/** Misma resolución "en caliente" que usaba promos-saldo: siempre contra la
+ *  base real al momento de aplicar, nunca una lista ya calculada antes. */
+async function resolverClienteIds({ filtro_tipo, filtro_perfil, clientes_ids }) {
+  if (filtro_tipo === "todos") {
+    const { rows } = await query(`select id from clientes`);
+    return rows.map((r) => r.id);
+  }
+  if (filtro_tipo === "perfil") {
+    const { rows } = await query(`select id from clientes where tipo_perfil = $1`, [filtro_perfil]);
+    return rows.map((r) => r.id);
+  }
+  const { rows } = await query(`select id from clientes where id = any($1::uuid[])`, [clientes_ids]);
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Campaña puntual de saldo/bebida — reemplaza lo que hacía
+ * POST /promos-saldo/aplicar: valida, resuelve la lista de clientes,
+ * acredita el monedero de cada uno YA MISMO, y deja el registro en la
+ * misma tabla que las promociones informativas (naturaleza != "informativa"),
+ * marcado como ya aplicado (aplicada_en) — no es editable ni reversible
+ * desde aquí, igual que antes.
+ */
+async function crearCampanaManual(req, res, naturaleza) {
+  const { titulo, monto_mxn, producto_id, alcance_tipo, producto_ids, alcance_categoria_id, filtro_tipo, filtro_perfil, clientes_ids } =
+    req.body || {};
+  if (!titulo?.trim()) throw badRequest("Falta titulo");
+  if (!FILTROS.includes(filtro_tipo)) throw badRequest(`filtro_tipo debe ser uno de: ${FILTROS.join(", ")}`);
+  if (filtro_tipo === "clientes" && (!Array.isArray(clientes_ids) || clientes_ids.length === 0)) {
+    throw badRequest("Falta clientes_ids — elige al menos un cliente");
+  }
+  if (filtro_tipo === "perfil" && !PERFILES.includes(filtro_perfil)) {
+    throw badRequest(`filtro_perfil debe ser uno de: ${PERFILES.join(", ")}`);
+  }
+
+  let montoPorCliente;
+  let productoIdFinal = null;
+  let productoIdsFinal = null;
+  let alcanceTipoFinal = null;
+  let alcanceCategoriaFinal = null;
+
+  if (naturaleza === "credito_regalo") {
+    montoPorCliente = Number(monto_mxn);
+    if (!(montoPorCliente > 0)) throw badRequest("monto_mxn debe ser mayor a 0");
+  } else {
+    if (!ALCANCES.includes(alcance_tipo)) throw badRequest(`alcance_tipo debe ser uno de: ${ALCANCES.join(", ")}`);
+    if (alcance_tipo === "producto_unico" && !producto_id) throw badRequest("Falta producto_id");
+    if (alcance_tipo === "varios_productos" && (!Array.isArray(producto_ids) || producto_ids.length === 0)) {
+      throw badRequest("Falta producto_ids — elige al menos un producto");
+    }
+    if (alcance_tipo === "categoria_completa" && !alcance_categoria_id) throw badRequest("Falta alcance_categoria_id");
+
+    montoPorCliente = await resolverMontoBebidaRegalo({ alcance_tipo, producto_id, producto_ids, alcance_categoria_id });
+    alcanceTipoFinal = alcance_tipo;
+    productoIdFinal = alcance_tipo === "producto_unico" ? producto_id : null;
+    productoIdsFinal = alcance_tipo === "varios_productos" ? producto_ids : null;
+    alcanceCategoriaFinal = alcance_tipo === "categoria_completa" ? alcance_categoria_id : null;
+  }
+  montoPorCliente = Math.round(montoPorCliente * 100) / 100;
+
+  const clienteIds = await resolverClienteIds({ filtro_tipo, filtro_perfil, clientes_ids });
+  if (clienteIds.length === 0) throw badRequest("Ningún cliente coincide con ese filtro");
+
+  const detalle = `Promo: ${titulo.trim()}`;
+  for (const clienteId of clienteIds) {
+    await query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [clienteId, montoPorCliente]);
+    await query(`insert into movimientos_monedero (cliente_id, monto, tipo, detalle) values ($1, $2, 'promo', $3)`, [
+      clienteId,
+      montoPorCliente,
+      detalle,
+    ]);
+  }
+
+  const { rows } = await query(
+    `insert into promociones_informativas
+       (titulo, activa, creado_por, naturaleza, monto_mxn, producto_id, alcance_tipo, producto_ids, alcance_categoria_id,
+        filtro_tipo, filtro_perfil, clientes_ids, cantidad_clientes_aplicados, aplicada_en)
+     values ($1, true, $2, $3, $4, $5, $6, $7::uuid[], $8, $9, $10, $11::uuid[], $12, now())
+     returning *`,
+    [
+      titulo.trim(),
+      req.staff.id,
+      naturaleza,
+      montoPorCliente,
+      productoIdFinal,
+      alcanceTipoFinal,
+      productoIdsFinal,
+      alcanceCategoriaFinal,
+      filtro_tipo,
+      filtro_tipo === "perfil" ? filtro_perfil : null,
+      filtro_tipo === "clientes" ? clienteIds : null,
+      clienteIds.length,
+    ]
+  );
+
+  res.status(201).json({ promocion: rows[0], clientes_afectados: clienteIds.length, monto_por_cliente: montoPorCliente });
+}
+
 /**
  * Ventana propia de días/horario de la promo (ej. happy hour) — independiente
  * de fecha_inicio/fecha_fin (esas son el rango de FECHAS de vigencia, no la
@@ -112,10 +249,19 @@ promocionesRouter.get(
     if (esVistaAdmin(req)) {
       // left join a productos: si la promo tiene producto_id, el panel
       // necesita precio/categoría/disponible para precargar el formulario.
+      // Para las campañas de saldo/bebida se resuelven también los nombres
+      // de categoría/productos del alcance y quién las aplicó, mismo dato
+      // que mostraba antes la tabla aparte de "Saldo y recompensas".
       const { rows } = await query(
-        `select pr.*, p.precio as producto_precio, p.categoria_id as producto_categoria_id, p.disponible as producto_disponible
+        `select pr.*,
+                p.precio as producto_precio, p.categoria_id as producto_categoria_id, p.disponible as producto_disponible, p.nombre as producto_nombre,
+                cat.nombre as alcance_categoria_nombre,
+                (select array_agg(p2.nombre order by p2.nombre) from productos p2 where p2.id = any(pr.producto_ids)) as producto_ids_nombres,
+                st.nombre_completo as creado_por_nombre
          from promociones_informativas pr
          left join productos p on p.id = pr.producto_id
+         left join categorias_producto cat on cat.id = pr.alcance_categoria_id
+         left join usuarios_staff st on st.id = pr.creado_por
          order by pr.created_at desc`
       );
       return res.json({ promociones: rows });
@@ -124,12 +270,16 @@ promocionesRouter.get(
     const { perfil } = req.query;
     if (perfil && !PERFILES.includes(perfil)) throw badRequest(`perfil debe ser uno de: ${PERFILES.join(", ")}`);
 
+    // Las campañas de saldo/bebida ("credito_regalo"/"bebida_regalo") son
+    // acciones ya ejecutadas, no promociones para mostrarle al cliente —
+    // la vista pública solo ve las informativas (banner/vigencia/cumpleaños).
     const condicionPerfil = perfil ? `and (pr.segmentos is null or array_length(pr.segmentos, 1) is null or $1 = any(pr.segmentos))` : "";
     const { rows } = await query(
       `select pr.*, p.precio as producto_precio, p.disponible as producto_disponible
        from promociones_informativas pr
        left join productos p on p.id = pr.producto_id
        where pr.activa = true
+         and pr.naturaleza = 'informativa'
          and (pr.fecha_inicio is null or pr.fecha_inicio <= current_date)
          and (pr.fecha_fin is null or pr.fecha_fin >= current_date)
          ${condicionPerfil}
@@ -159,6 +309,10 @@ promocionesRouter.post(
   requireStaffAuth,
   requireRole("admin"),
   asyncHandler(async (req, res) => {
+    const naturaleza = req.body?.naturaleza || "informativa";
+    if (!NATURALEZAS.includes(naturaleza)) throw badRequest(`naturaleza debe ser una de: ${NATURALEZAS.join(", ")}`);
+    if (naturaleza !== "informativa") return crearCampanaManual(req, res, naturaleza);
+
     const {
       titulo,
       descripcion,
@@ -298,6 +452,9 @@ promocionesRouter.patch(
     const { rows: actualRows } = await query(`select * from promociones_informativas where id = $1`, [req.params.id]);
     const actual = actualRows[0];
     if (!actual) throw notFound("Promoción no encontrada");
+    if (actual.naturaleza !== "informativa") {
+      throw badRequest("Una campaña de saldo/bebida ya aplicada no se puede editar — es un registro de algo que ya ocurrió.");
+    }
 
     const { precio, categoria_id } = req.body || {};
     const cambios = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => CAMPOS_EDITABLES.includes(k)));
@@ -398,8 +555,11 @@ promocionesRouter.delete(
   requireStaffAuth,
   requireRole("admin"),
   asyncHandler(async (req, res) => {
-    const { rows } = await query(`select producto_id from promociones_informativas where id = $1`, [req.params.id]);
+    const { rows } = await query(`select producto_id, naturaleza from promociones_informativas where id = $1`, [req.params.id]);
     if (!rows[0]) throw notFound("Promoción no encontrada");
+    if (rows[0].naturaleza !== "informativa") {
+      throw badRequest("Una campaña de saldo/bebida ya aplicada no se puede eliminar — es un registro de algo que ya ocurrió.");
+    }
 
     // El producto ligado se oculta (no se borra) — puede que ya tenga
     // pedidos en su historial, y borrarlo rompería esos registros.

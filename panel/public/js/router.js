@@ -6,7 +6,6 @@ import * as dashboard from "./screens/dashboard.js";
 import * as recompensa from "./screens/recompensa.js";
 import * as menu from "./screens/menu.js";
 import * as promociones from "./screens/promociones.js";
-import * as promosSaldo from "./screens/promosSaldo.js";
 import * as vigencias from "./screens/vigencias.js";
 import * as clientes from "./screens/clientes.js";
 import * as cuentas from "./screens/cuentas.js";
@@ -36,7 +35,6 @@ async function despachar() {
   if (ruta === "recompensa") return recompensa.render();
   if (ruta === "menu") return menu.render();
   if (ruta === "promociones") return promociones.render();
-  if (ruta === "promos-saldo") return promosSaldo.render();
   if (ruta === "vigencias") return vigencias.render();
   if (ruta === "clientes") return clientes.render();
   if (ruta === "cuentas") return cuentas.render();
