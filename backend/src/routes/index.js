@@ -19,6 +19,7 @@ import { configuracionSistemaRouter } from "./configuracionSistema.routes.js";
 import { uploadsRouter } from "./uploads.routes.js";
 import { pagosRouter } from "./pagos.routes.js";
 import { logErroresRouter } from "./logErrores.routes.js";
+import { promosSaldoRouter } from "./promosSaldo.routes.js";
 
 /**
  * Mapa de rutas — mismos grupos y nombres que fase6-backend-api.md.
@@ -49,3 +50,4 @@ apiRouter.use("/configuracion-sistema", configuracionSistemaRouter);
 apiRouter.use("/uploads", uploadsRouter);
 apiRouter.use("/pagos", pagosRouter);
 apiRouter.use("/log-errores", logErroresRouter);
+apiRouter.use("/promos-saldo", promosSaldoRouter);

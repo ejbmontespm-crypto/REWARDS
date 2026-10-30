@@ -6,6 +6,7 @@ const NAV = [
   { ruta: "recompensa", texto: "Regla de recompensa", icono: "recompensa" },
   { ruta: "menu", texto: "Menú", icono: "menu" },
   { ruta: "promociones", texto: "Promociones", icono: "promociones" },
+  { ruta: "promos-saldo", texto: "Saldo y recompensas", icono: "recompensa" },
   { ruta: "vigencias", texto: "Vigencias", icono: "vigencias" },
   { ruta: "clientes", texto: "Clientes", icono: "clientes" },
   { ruta: "cuentas", texto: "Cuentas", icono: "cuentas" },
