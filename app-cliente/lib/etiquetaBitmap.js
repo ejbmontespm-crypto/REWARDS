@@ -1,20 +1,18 @@
-// Dibujo puro del bitmap de la etiqueta — texto (fuente de píxeles 5×7
-// propia, dominio público) y QR (matriz de módulos de `qrcode`),
-// compuestos en un lienzo de 1 bit por píxel. Sin dependencias nativas a
-// propósito: así se puede previsualizar en web/Node antes de gastar un
-// build, y lo único que cambia al imprimir de verdad es quién manda los
-// bytes (ver impresoraEtiquetas.js).
+// Dibujo puro del bitmap de la etiqueta — logo, texto (fuente de píxeles
+// 8×8, dominio público — derivada de la fuente VGA original de IBM) y QR
+// (matriz de módulos de `qrcode`), compuestos en un lienzo de 1 bit por
+// píxel. Sin dependencias nativas a propósito: así se puede previsualizar
+// en web/Node antes de gastar un build, y lo único que cambia al imprimir
+// de verdad es quién manda los bytes (ver impresoraEtiquetas.js).
 import { Buffer } from "buffer";
 import QRCode from "qrcode";
 
 export const ANCHO_DOTS = 320; // 40mm × 8 dots/mm (203dpi)
 export const ALTO_DOTS = 480; // 60mm × 8 dots/mm
-export const MAX_LINEAS_POR_PAGINA = 7;
 
 const MARGEN_X = 16;
 const ANCHO_UTIL = ANCHO_DOTS - MARGEN_X * 2;
 const ESCALA_ITEM = 2;
-const MAX_CARACTERES_ITEM = Math.floor(ANCHO_UTIL / ((5 + 1) * ESCALA_ITEM));
 
 /** Nombres de producto largos ("Croissant de jamón y queso") no caben en
  *  una sola línea a esta escala — sin esto se recortaban en silencio y
@@ -58,21 +56,43 @@ export function lineasDeItems(items) {
 }
 
 // ---------------------------------------------------------------------
-// Fuente de píxeles 5×7 (ASCII 0x20–0x7E) — la clásica de Adafruit_GFX,
-// de dominio público. 5 bytes por carácter (una columna por byte, bit 0
-// = fila de arriba). Va en base64 solo para que no ocupe 95 líneas acá.
+// Fuente de píxeles 8×8 (ASCII 0x20–0x7E) — derivada de la fuente VGA
+// original de IBM (dominio público, vía font8x8 de Daniel Hepper), más
+// redondeada y legible que una 5×7. 8 bytes por carácter (una columna
+// por byte, bit 0 = fila de arriba). Va en base64 para no ocupar 95
+// líneas acá.
 // ---------------------------------------------------------------------
-const FUENTE_5X7_B64 =
-  "AAAAAAAAAF8AAAAHAAcAFH8UfxQkKn8qEiMTCGRiNklWIFAACAcDAAAcIkEAAEEiHAAqHH8cKggIPggIAIBwMAAICAgICAAAYGAAIBAIBAI+UUlFPgBCf0AAcklJSUYhQUlNMxgUEn8QJ0VFRTk8SklJMUEhEQkHNklJSTZGSUkpHgAAFAAAAEA0AAAACBQiQRQUFBQUAEEiFAgCAVkJBj5BXVlOfBIREnx/SUlJNj5BQUEif0FBQT5/SUlJQX8JCQkBPkFBUXN/CAgIfwBBf0EAIEBBPwF/CBQiQX9AQEBAfwIcAn9/BAgQfz5BQUE+fwkJCQY+QVEhXn8JGSlGJklJSTIDAX8BAz9AQEA/HyBAIB8/QDhAP2MUCBRjAwR4BANhWUlNQwB/QUFBAgQIECAAQUFBfwQCAQIEQEBAQEAAAwcIACBUVHhAfyhERDg4REREKDhERCh/OFRUVBgACH4JAhikpJx4fwgEBHgARH1AACBAQD0AfxAoRAAAQX9AAHwEeAR4fAgEBHg4REREOPwYJCQYGCQkGPx8CAQECEhUVFQkBAQ/RCQ8QEAgfBwgQCAcPEAwQDxEKBAoREyQkJB8RGRUTEQACDZBAAAAdwAAAEE2CAACAQIEAg==";
-let FUENTE_5X7 = null;
+const FUENTE_COLS = 8;
+const FUENTE_FILAS = 8;
+const FUENTE_B64 =
+  "AAAAAAAAAAAAAAZfXwYAAAADAwADAwAAFH9/FH9/FAAkLmtrOhIAAEZmMBgMZmIAMHpPXTd6SAAEBwMAAAAAAAAcPmNBAAAAAEFjPhwAAAAIKj4cHD4qCAgIPj4ICAAAAIDgYAAAAAAICAgICAgAAAAAYGAAAAAAYDAYDAYDAQA+f3FZTX8+AEBCf39AQAAAYnNZSW9mAAAiY0lJfzYAABgcFlN/f1AAJ2dFRX05AAA8fktJeTAAAAMDcXkPBwAANn9JSX82AAAGT0lpPx4AAAAAZmYAAAAAAIDmZgAAAAAIHDZjQQAAACQkJCQkJAAAAEFjNhwIAAACA1FZDwYAAD5/QV1dHx4AfH4TE358AABBf39JSX82ABw+Y0FBYyIAQX9/QWM+HABBf39JXUFjAEF/f0kdAQMAHD5jQVFzcgB/fwgIf38AAABBf39BAAAAMHBAQX8/AQBBf38IHHdjAEF/f0FAYHAAf38OHA5/fwB/fwYMGH9/ABw+Y0FjPhwAQX9/SQkPBgAePyFxf14AAEF/fwkZf2YAJm9NWXMyAAADQX9/QQMAAH9/QEB/fwAAHz9gYD8fAAB/fzAYMH9/AENnPBg8Z0MAB094eE8HAABHY3FZTWdzAAB/f0FBAAAAAQMGDBgwYAAAQUF/fwAAAAgMBgMGDAgAgICAgICAgIAAAAMHBAAAACB0VFQ8eEAAQX8/SEh4MAA4fEREbCgAADB4SEk/f0AAOHxUVFwYAABIfn9JAwIAAJi8pKT4fAQAQX9/CAR8eAAARH19QAAAAGDggID9fQAAQX9/EDhsRAAAQX9/QAAAAHx8GDgcfHgAfHwEBHx4AAA4fEREfDgAAIT8+KQkPBgAGDwkpPj8hABEfHhMBBwYAEhcVFR0JAAAAAQ+f0QkAAA8fEBAPHxAABw8YGA8HAAAPHxwOHB8PABEbDgQOGxEAJy8oKD8fAAATGR0XExkAAAICD53QUEAAAAAAHd3AAAAQUF3PggIAAACAwEDAgMBAA==";
+let FUENTE = null;
 function obtenerFuente() {
-  if (!FUENTE_5X7) FUENTE_5X7 = Buffer.from(FUENTE_5X7_B64, "base64");
-  return FUENTE_5X7;
+  if (!FUENTE) FUENTE = Buffer.from(FUENTE_B64, "base64");
+  return FUENTE;
 }
 
-/** El texto en los pedidos puede traer acentos/ñ que la fuente 5×7
- *  (solo ASCII 0x20–0x7E) no tiene — se normaliza quitando diacríticos
- *  en vez de dejar un hueco/signo de interrogación por cada letra. */
+// ---------------------------------------------------------------------
+// Logo "D·éclair" — convertido una sola vez (fuera de la app, ver
+// scratchpad de la sesión) desde el PNG real configurado en Apariencia a
+// 1 bit por píxel. NO se actualiza solo si cambia el logo del negocio —
+// si eso pasa, hay que repetir la conversión y sacar un build nuevo
+// (pendiente explorar una versión dinámica más adelante).
+// ---------------------------------------------------------------------
+const LOGO_ANCHO = 220;
+const LOGO_ALTO = 80;
+const LOGO_ANCHO_BYTES = 28;
+const LOGO_B64 =
+  "AAAAAAAAAAAHgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP4D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/g/4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD4f/j4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4A/AOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeADwBwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAeAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwADwHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAAcBwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHgAHg8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4AA4OAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPAAPHgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4AB3wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPgAf4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/AH8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/+8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//uAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH/7gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwA4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcAOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOADgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwA8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA///AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf/4AAAAAAAAAAAAAAAAAAAAAAAHgAAAAAAAAAP//4AAAAAAAP/AAAAA//AAAAAA//gAAfh//4AD///wAAAAAAf/+AAAA//8APgAA///A+H4f//gA///+AAAAAAP//4AAA///wD4AA///4Ph+H//8AP///4AAAAAP///gAA////A+AAf///j4fh///gD4AP/AAAAAH///8AAf8A/4PgAP/z/8+H4fgP8A+AAf4AAAAD/AD/gAP8AD/D4AH+AD//h+H4A/gPgAB/AAAAB/AAH8AH8AAPw+AD+AAP/4fh+AH4D4AAH4AAAA/gAA/gD+AAB8PgB/AAA/+H4fgA/A+AAA+AAAAfgAAH4A/AAAOD4A/gAAH/h+H4APwPgAAHwAAAHwAAA/AfgAABA+APwAAA/4fh+AB8D4AAB8AAAD8AAAH4H4AAAAPgH4AAAH+H4fgAfA+AAAPgAAA+AAAA+D8AAAAD4B8AAAB/h+H4AHwPgAAB4AAAfAAAAPg/AAAAA+A/AAAAP4fh+AD8D4AAAfAAAHwAAAB8fgAAAAPgPgAAAD+H4fgA/A+AAAHwAAB8AAAAfH4AAAAD4D4AAAAfh+H4AfgPgAAA8A8A+AAAAHx+AAAAA+B+AAAAH4fh+AP4D4AAAPAfwPgAAAB8fgAAAAPgfAAAAB+H4fgH8A+AAADwP8D//////nwAAAAD4HwAAAAfh+H///APgAAA8D/g//////58AAAAA+B8AAAAD4fh///AD4AAAPA/4P/////+fAAAAAPgfAAAAA+H4f//gA+AAADwP+D//////nwAAAAD4HwAAAAfh+H//wAPgAAA8D/A/f////x+AAAAA+B8AAAAH4fh+H+AD4AAAPAfwPgAAAAAfgAAAAPgfAAAAB+H4fgfwA+AAAHwD4B4AAAAAH4AAAAD4H4AAAAfh+H4D+APgAAB4AAAfAAAAAB+AAAAA+A+AAAAH4fh+AfwD4AAAeAAAHwAAAAAPwAAAAPgPwAAAD+H4fgD8A+AAAPgAAA+AAAAAD8AAAAD4D8AAAA/h+H4AfgPgAAHwAAAPgAAAYA/gAAAA+AfgAAAf4fh+AD4D4AAB8AAAB8AAAPgH4AAAAPgH4AAAP+H4fgA/A+AAA+AAAAfgAAD4A/AAAMD4A/AAAH/h+H4AHwPgAAfAAAAD8AAD+AP4AAHg+AP4AAD/4fh+AB+D4AAfwAAAAfwAB/AB/AAD8PgB/gAB/+H4fgAfg+AAf4AAAAH/AB/gAP8AB/D4AP8AB//h+H4AD4PgA/8AAAAAf+H/wAB/wD/g+AB/4D/z4fh+AA+D///8AAAAAD///4AAP///wPgAP///4+H4fgAPw///+AAAAAAf//8AAA///4D4AA///8Ph+H4AD8P//+AAAAAAB//8AAAH//4A+AAH//+D4fh+AA/D//8AAAAAAAD/4AAAAP/4APgAAf/8A8H4fgAPwAAAAAAAAAAAAAAAAAAPAAD4AAA/4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/+AAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//+AAAABgAAAAAAAAAAAAAAAAAAAAAAAAAAAAP///AAAA4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//AAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAH//wA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB///gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAf+AAAAAAAAA=";
+let LOGO = null;
+function obtenerLogo() {
+  if (!LOGO) LOGO = Buffer.from(LOGO_B64, "base64");
+  return LOGO;
+}
+
+/** El texto en los pedidos puede traer acentos/ñ que la fuente (solo
+ *  ASCII 0x20–0x7E) no tiene — se normaliza quitando diacríticos en vez
+ *  de dejar un hueco/signo de interrogación por cada letra. */
 function normalizarParaFuente(texto) {
   return String(texto ?? "")
     .normalize("NFD")
@@ -83,8 +103,8 @@ function normalizarParaFuente(texto) {
 }
 
 // ---------------------------------------------------------------------
-// Lienzo de 1 bit por píxel — se dibuja todo acá (texto y QR) y al final
-// se empaca en los bytes que espera el comando BITMAP de TSPL.
+// Lienzo de 1 bit por píxel — se dibuja todo acá (logo, texto y QR) y al
+// final se empaca en los bytes que espera el comando BITMAP de TSPL.
 // ---------------------------------------------------------------------
 export function crearLienzo(ancho, alto) {
   return { ancho, alto, pixeles: new Uint8Array(ancho * alto) };
@@ -98,10 +118,10 @@ function ponerPixel(lienzo, x, y) {
 function dibujarGlifo(lienzo, x, y, codigo, escala) {
   if (codigo < 0x20 || codigo > 0x7e) return;
   const fuente = obtenerFuente();
-  const offset = (codigo - 0x20) * 5;
-  for (let col = 0; col < 5; col++) {
+  const offset = (codigo - 0x20) * FUENTE_COLS;
+  for (let col = 0; col < FUENTE_COLS; col++) {
     const columna = fuente[offset + col];
-    for (let fila = 0; fila < 7; fila++) {
+    for (let fila = 0; fila < FUENTE_FILAS; fila++) {
       if ((columna >> fila) & 1) {
         for (let sy = 0; sy < escala; sy++) {
           for (let sx = 0; sx < escala; sx++) {
@@ -113,17 +133,28 @@ function dibujarGlifo(lienzo, x, y, codigo, escala) {
   }
 }
 
+function anchoTexto(texto, escala) {
+  return normalizarParaFuente(texto).length * (FUENTE_COLS + 1) * escala;
+}
+
 /** Dibuja texto de izquierda a derecha; recorta si se pasa del ancho
  *  disponible en vez de desbordarse fuera de la etiqueta. */
 export function dibujarTexto(lienzo, x, y, texto, escala, anchoMaximo) {
   const limpio = normalizarParaFuente(texto);
-  const anchoGlifo = (5 + 1) * escala; // 1 columna de espacio entre letras
+  const anchoGlifo = (FUENTE_COLS + 1) * escala; // 1 columna de espacio entre letras
   let cursorX = x;
   for (const ch of limpio) {
     if (anchoMaximo != null && cursorX + anchoGlifo > x + anchoMaximo) break;
     dibujarGlifo(lienzo, cursorX, y, ch.charCodeAt(0), escala);
     cursorX += anchoGlifo;
   }
+}
+
+/** Mismo dibujo, pero centrado horizontalmente dentro de [x, x+ancho]. */
+function dibujarTextoCentrado(lienzo, x, anchoDisponible, y, texto, escala) {
+  const ancho = Math.min(anchoTexto(texto, escala), anchoDisponible);
+  const inicio = x + Math.max(0, (anchoDisponible - ancho) / 2);
+  dibujarTexto(lienzo, Math.round(inicio), y, texto, escala, anchoDisponible);
 }
 
 export function dibujarQr(lienzo, x, y, contenido, escalaModulo) {
@@ -140,6 +171,36 @@ export function dibujarQr(lienzo, x, y, contenido, escalaModulo) {
       }
     }
   }
+  return size * escalaModulo;
+}
+
+/** Dibuja un bitmap ya empacado a 1 bit/pixel (MSB primero) — usado para
+ *  el logo estático. */
+function dibujarBitmapEmpacado(lienzo, x, y, datos, anchoBytes, alto, anchoReal) {
+  for (let fila = 0; fila < alto; fila++) {
+    for (let col = 0; col < anchoReal; col++) {
+      const bit = (datos[fila * anchoBytes + (col >> 3)] >> (7 - (col % 8))) & 1;
+      if (bit) ponerPixel(lienzo, x + col, y + fila);
+    }
+  }
+}
+
+function dibujarLogo(lienzo, xCentro, y) {
+  dibujarBitmapEmpacado(lienzo, Math.round(xCentro - LOGO_ANCHO / 2), y, obtenerLogo(), LOGO_ANCHO_BYTES, LOGO_ALTO, LOGO_ANCHO);
+}
+
+/** Centrado + ajuste de línea — el folio es siempre corto y nunca
+ *  necesita envolver, pero el nombre (ej. "Roberto Hernandez") sí puede
+ *  pasarse del ancho con la fuente 8×8 y se estaba recortando en
+ *  silencio. Regresa la posición Y después de la última línea dibujada. */
+function dibujarTextoCentradoConAjuste(lienzo, x, anchoDisponible, y, texto, escala, maxCaracteres) {
+  const lineas = envolverTexto(texto, maxCaracteres);
+  let cursorY = y;
+  for (const linea of lineas) {
+    dibujarTextoCentrado(lienzo, x, anchoDisponible, cursorY, linea, escala);
+    cursorY += (FUENTE_FILAS + 1) * escala + 2;
+  }
+  return cursorY;
 }
 
 /** Empaca el lienzo a 1 bit por píxel, MSB primero, ancho redondeado al
@@ -161,34 +222,86 @@ export function empacarBitmap(lienzo) {
   return { anchoBytes, datos };
 }
 
+const MAX_CARACTERES_ITEM = Math.floor(ANCHO_UTIL / ((FUENTE_COLS + 1) * ESCALA_ITEM));
+
 /** Arma el/los lienzo(s) de un pedido (uno por etiqueta física, 1/2, 2/2…
  *  si hay muchos productos) — la misma composición que se manda a
- *  imprimir, pero sin empacar ni mandar nada, para poder previsualizarla. */
-export function construirLienzosEtiqueta(pedido) {
-  const lineas = lineasDeItems(pedido.items).flatMap((linea) => envolverTexto(linea, MAX_CARACTERES_ITEM));
-  const paginas = [];
-  for (let i = 0; i < lineas.length; i += MAX_LINEAS_POR_PAGINA) {
-    paginas.push(lineas.slice(i, i + MAX_LINEAS_POR_PAGINA));
-  }
-  if (paginas.length === 0) paginas.push([]);
-  const totalPaginas = paginas.length;
+ *  imprimir, pero sin empacar ni mandar nada, para poder previsualizarla.
+ *  Mismo orden que el diseño original en PDF: logo, QR, folio, nombre,
+ *  productos, hora de recolección — todo centrado salvo la lista. */
+const ALTO_LINEA_CENTRADA = (FUENTE_FILAS + 1) * 2 + 2; // folio/nombre, a escala 2
 
+export function construirLienzosEtiqueta(pedido) {
   const horaPickup = new Date(pedido.hora_pickup).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
   const folio = pedido.folio || pedido.id.slice(0, 8);
   const nombre = nombreCorto(pedido);
 
+  // El nombre (y, poquísimas veces, hasta el folio) pueden necesitar más
+  // de una línea con esta fuente más ancha — el alto real del encabezado
+  // varía según eso, así que la paginación de productos se calcula contra
+  // el espacio que DE VERDAD queda, no contra un número fijo de líneas
+  // (si no, con un nombre largo los productos se encimaban con "Pickup").
+  const lineasFolio = envolverTexto(folio, MAX_CARACTERES_ITEM).length;
+  const lineasNombre = envolverTexto(nombre, MAX_CARACTERES_ITEM).length;
+  const lineasPickup = envolverTexto(`Pickup: ${horaPickup}`, MAX_CARACTERES_ITEM);
+  const altoEncabezadoTexto = lineasFolio * ALTO_LINEA_CENTRADA + 4 + lineasNombre * ALTO_LINEA_CENTRADA + 8;
+  const altoPickup = lineasPickup.length * 22 + 8;
+
+  const altoEncabezadoPrimera = 8 + LOGO_ALTO + 10 + 116 + 14 + altoEncabezadoTexto; // 116 ≈ tamaño típico del QR
+  const altoEncabezadoOtras = 8 + 24 + altoEncabezadoTexto;
+  const maxLineasPrimera = Math.max(1, Math.floor((ALTO_DOTS - altoEncabezadoPrimera - altoPickup) / 22));
+  const maxLineasOtras = Math.max(1, Math.floor((ALTO_DOTS - altoEncabezadoOtras - altoPickup) / 22));
+
+  const lineas = lineasDeItems(pedido.items).flatMap((linea) => envolverTexto(linea, MAX_CARACTERES_ITEM));
+  const paginas = [];
+  let resto = lineas;
+  let primera = true;
+  while (resto.length > 0 || paginas.length === 0) {
+    const cupo = primera ? maxLineasPrimera : maxLineasOtras;
+    paginas.push(resto.slice(0, cupo));
+    resto = resto.slice(cupo);
+    primera = false;
+    if (paginas[paginas.length - 1].length === 0 && resto.length === 0) break;
+  }
+  const totalPaginas = paginas.length;
+
   return paginas.map((lineasPagina, i) => {
     const lienzo = crearLienzo(ANCHO_DOTS, ALTO_DOTS);
-    if (i === 0) dibujarQr(lienzo, 108, 16, pedido.id, 4);
-    dibujarTexto(lienzo, MARGEN_X, 180, folio, 3, ANCHO_UTIL);
-    dibujarTexto(lienzo, MARGEN_X, 208, nombre, 3, ANCHO_UTIL);
-    if (totalPaginas > 1) dibujarTexto(lienzo, 260, 180, `${i + 1}/${totalPaginas}`, 2, 60);
-    let y = 244;
+    const centroX = ANCHO_DOTS / 2;
+
+    let y = 8;
+    if (i === 0) {
+      dibujarLogo(lienzo, centroX, y);
+      y += LOGO_ALTO + 10;
+      const tamanoQr = dibujarQr(lienzo, Math.round(centroX - 58), y, pedido.id, 4);
+      y += tamanoQr + 14;
+    } else {
+      y += 24; // espaciador en páginas 2+, sin logo ni QR
+    }
+
+    // Esquina superior izquierda — el logo ocupa casi todo el ancho (solo
+    // deja ~50dots de margen a cada lado), así que el indicador de página
+    // va chico y pegado a la esquina para no encimarse con él.
+    if (totalPaginas > 1) dibujarTexto(lienzo, 8, 4, `${i + 1}/${totalPaginas}`, 1, 44);
+
+    y = dibujarTextoCentradoConAjuste(lienzo, MARGEN_X, ANCHO_UTIL, y, folio, 2, MAX_CARACTERES_ITEM);
+    y += 4;
+    y = dibujarTextoCentradoConAjuste(lienzo, MARGEN_X, ANCHO_UTIL, y, nombre, 2, MAX_CARACTERES_ITEM);
+    y += 8;
+
     for (const linea of lineasPagina) {
       dibujarTexto(lienzo, MARGEN_X, y, linea, ESCALA_ITEM, ANCHO_UTIL);
       y += 22;
     }
-    dibujarTexto(lienzo, MARGEN_X, 440, `Pickup: ${horaPickup}`, ESCALA_ITEM, ANCHO_UTIL);
+
+    // Misma fuente ancha que el resto — si no cabe en una línea, se
+    // envuelve igual que los productos en vez de recortarse en silencio
+    // (ya pasó una vez con el "p.m." cortado).
+    let yPickup = ALTO_DOTS - 8 - lineasPickup.length * 22;
+    for (const linea of lineasPickup) {
+      dibujarTexto(lienzo, MARGEN_X, yPickup, linea, ESCALA_ITEM, ANCHO_UTIL);
+      yPickup += 22;
+    }
     return lienzo;
   });
 }
