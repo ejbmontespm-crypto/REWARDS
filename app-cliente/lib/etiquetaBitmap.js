@@ -78,6 +78,7 @@ function normalizarParaFuente(texto) {
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .replace(/×/g, "x")
+    .replace(/[  -​ ]/g, " ") // espacios "raros" que meten algunos locales (ej. antes de "p.m.")
     .replace(/[^\x20-\x7e]/g, "?");
 }
 
@@ -148,7 +149,10 @@ export function empacarBitmap(lienzo) {
   const datos = Buffer.alloc(anchoBytes * lienzo.alto);
   for (let y = 0; y < lienzo.alto; y++) {
     for (let x = 0; x < lienzo.ancho; x++) {
-      if (lienzo.pixeles[y * lienzo.ancho + x]) {
+      // Esta impresora imprime tinta donde el bit es 0, no donde es 1 —
+      // confirmado contra el hardware real (salía con los colores
+      // invertidos: fondo negro, texto blanco, antes de este cambio).
+      if (!lienzo.pixeles[y * lienzo.ancho + x]) {
         const indice = y * anchoBytes + (x >> 3);
         datos[indice] |= 1 << (7 - (x % 8));
       }
