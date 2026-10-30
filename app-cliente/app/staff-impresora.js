@@ -9,6 +9,7 @@ import {
   listarDispositivosEmparejados,
   imprimirEtiquetaDirecto,
   imprimirDiagnosticoFuentes,
+  imprimirDiagnosticoCpcl,
 } from "../lib/impresoraEtiquetas";
 
 // Pedido de prueba — no necesita existir de verdad, solo sirve para
@@ -83,9 +84,22 @@ export default function ConfigurarImpresora() {
     setError("");
     try {
       await imprimirDiagnosticoFuentes();
-      mostrarToast("✓ Etiqueta de diagnóstico enviada");
+      mostrarToast("✓ Etiqueta de diagnóstico (TSPL) enviada");
     } catch (err) {
       setError(err.message || "No se pudo imprimir el diagnóstico.");
+    } finally {
+      setProbando(false);
+    }
+  }
+
+  async function probarDiagnosticoCpcl() {
+    setProbando(true);
+    setError("");
+    try {
+      await imprimirDiagnosticoCpcl();
+      mostrarToast("✓ Etiqueta de diagnóstico (CPCL) enviada");
+    } catch (err) {
+      setError(err.message || "No se pudo imprimir el diagnóstico CPCL.");
     } finally {
       setProbando(false);
     }
@@ -146,7 +160,15 @@ export default function ConfigurarImpresora() {
             {probando ? (
               <ActivityIndicator color={colores.acento} />
             ) : (
-              <Text style={estilos.textoBotonDiagnostico}>Diagnóstico: probar 7 fuentes a la vez</Text>
+              <Text style={estilos.textoBotonDiagnostico}>Diagnóstico TSPL: probar 7 fuentes a la vez</Text>
+            )}
+          </Pressable>
+
+          <Pressable style={estilos.botonDiagnostico} onPress={probarDiagnosticoCpcl} disabled={probando}>
+            {probando ? (
+              <ActivityIndicator color={colores.acento} />
+            ) : (
+              <Text style={estilos.textoBotonDiagnostico}>Diagnóstico CPCL: probar lenguaje alterno</Text>
             )}
           </Pressable>
         </>

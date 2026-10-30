@@ -158,3 +158,28 @@ export function construirComandosDiagnosticoFuentes() {
 export async function imprimirDiagnosticoFuentes() {
   await enviarBloques(construirComandosDiagnosticoFuentes());
 }
+
+/** SOLO diagnóstico: el ancho de cada bloque negro del diagnóstico de
+ *  fuentes TSPL creció proporcional al largo del texto de cada línea —
+ *  la impresora sí procesa bien el contenido, su renderizador de TEXT
+ *  simplemente no dibuja glifos reales con NINGÚN identificador de fuente
+ *  probado. Esta impresora dice soportar TSPL y CPCL — son dos lenguajes
+ *  de comando completamente distintos con intérpretes separados en el
+ *  firmware; es común que un clon tenga uno bien implementado y el otro a
+ *  medias. Esta etiqueta prueba el renderizador de texto de CPCL en vez
+ *  del de TSPL, con varios tamaños de fuente CPCL (0-7). Bórrese cuando
+ *  ya se sepa cuál camino usar de verdad. */
+export function construirComandosDiagnosticoCpcl() {
+  const lineas = ["! 0 200 200 480 1"];
+  let y = 20;
+  for (let fuente = 0; fuente <= 7; fuente++) {
+    lineas.push(`TEXT ${fuente} 0 20 ${y} CPCL fuente ${fuente}`);
+    y += 55;
+  }
+  lineas.push("FORM", "PRINT");
+  return [lineas.join("\r\n") + "\r\n"];
+}
+
+export async function imprimirDiagnosticoCpcl() {
+  await enviarBloques(construirComandosDiagnosticoCpcl());
+}
