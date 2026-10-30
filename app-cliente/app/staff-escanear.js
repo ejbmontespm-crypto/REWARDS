@@ -3,9 +3,9 @@ import { View, Text, Pressable, StyleSheet, ActivityIndicator } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { api, ApiError } from "../../lib/api";
-import { useTema } from "../../lib/contextoTema";
-import ResultadoCliente from "../../components/ResultadoCliente";
+import { api, ApiError } from "../lib/api";
+import { useTema } from "../lib/contextoTema";
+import ResultadoCliente from "../components/ResultadoCliente";
 
 // Un solo escáner para los dos tipos de QR — se distinguen por su propio
 // formato, no hace falta que el staff elija pestaña:

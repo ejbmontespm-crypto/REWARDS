@@ -1,14 +1,18 @@
 import { useEffect, useState } from "react";
-import { Tabs } from "expo-router";
+import { View, StyleSheet } from "react-native";
+import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTema } from "../../lib/contextoTema";
 import { useVigilarPedidosNuevos } from "../../lib/useVigilarPedidosNuevos";
 import { obtenerNotificacionesStaff, suscribirseNotificacionesStaff } from "../../lib/bandejaStaff";
+import { sombra } from "../../constants/theme";
 
 export default function StaffTabsLayout() {
   const { colores } = useTema();
+  const router = useRouter();
   const [sinLeer, setSinLeer] = useState(0);
   useVigilarPedidosNuevos();
+  const estilos = crearEstilosEscanear(colores);
 
   useEffect(() => {
     const actualizar = (lista) => setSinLeer(lista.filter((n) => !n.leida).length);
@@ -18,6 +22,7 @@ export default function StaffTabsLayout() {
 
   return (
     <Tabs
+      initialRouteName="inicio"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colores.acento,
@@ -28,12 +33,32 @@ export default function StaffTabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
-        options={{ title: "Escanear", tabBarIcon: ({ color, size }) => <Ionicons name="qr-code" size={size + 4} color={color} /> }}
+        name="inicio"
+        options={{ title: "Inicio", tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size + 4} color={color} /> }}
       />
       <Tabs.Screen
         name="cola"
         options={{ title: "Cola de pedidos", tabBarIcon: ({ color, size }) => <Ionicons name="receipt" size={size + 4} color={color} /> }}
+      />
+      <Tabs.Screen
+        name="escanear"
+        options={{
+          title: "Escanear",
+          tabBarLabel: () => null,
+          tabBarIcon: () => (
+            <View style={estilos.botonEscanearSombra}>
+              <View style={estilos.botonEscanear}>
+                <Ionicons name="scan" size={26} color="#fff" />
+              </View>
+            </View>
+          ),
+        }}
+        listeners={() => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            router.push("/staff-escanear");
+          },
+        })}
       />
       <Tabs.Screen
         name="notificaciones"
@@ -50,4 +75,19 @@ export default function StaffTabsLayout() {
       />
     </Tabs>
   );
+}
+
+// Mismo botón circular flotante que el QR de la app de cliente.
+function crearEstilosEscanear(colores) {
+  return StyleSheet.create({
+    botonEscanearSombra: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: colores.fondo,
+      marginTop: -18,
+      ...sombra.media,
+    },
+    botonEscanear: { flex: 1, borderRadius: 26, alignItems: "center", justifyContent: "center", backgroundColor: colores.acento },
+  });
 }

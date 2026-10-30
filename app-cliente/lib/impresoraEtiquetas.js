@@ -73,12 +73,10 @@ export function construirComandosTspl(pedido) {
       "SIZE 40 mm,60 mm",
       "GAP 2 mm,0 mm",
       // El QR salía nítido pero el texto se veía como barras negras sólidas
-      // — con el cabezal al tope de calor/velocidad, los trazos finos de
-      // la fuente pequeña se funden entre sí (el QR tolera el exceso de
-      // tinta porque sus módulos ya son bloques grandes). Densidad media y
-      // velocidad lenta le dan tiempo al cabezal de no sobre-quemar cada
-      // trazo.
-      "SPEED 2",
+      // — con el cabezal sin velocidad/densidad fijas corría con el default
+      // de fábrica. Velocidad y densidad tomadas de la etiqueta del
+      // fabricante (OCBP-401DT: speed 5, density 8).
+      "SPEED 5",
       "DENSITY 8",
       "DIRECTION 0",
       // Esta impresora trae de fábrica la página de códigos china PC936
