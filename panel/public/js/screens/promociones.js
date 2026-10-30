@@ -232,7 +232,7 @@ async function formularioPromocion(content, promo) {
           <label style="display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;">
             <input type="checkbox" id="check-cumpleanos" name="solo_cumpleanos" ${promo?.solo_cumpleanos ? "checked" : ""} /> Solo para cumpleañeros
           </label>
-          <div id="bloque-cumpleanos" style="display:${promo?.solo_cumpleanos ? "flex" : "none"};gap:12px;align-items:flex-end;margin-top:8px;">
+          <div id="bloque-cumpleanos" style="display:${promo?.solo_cumpleanos ? "flex" : "none"};gap:12px;align-items:flex-end;margin-top:8px;flex-wrap:wrap;">
             <div class="form-row" style="margin:0;">
               <label class="form-label">Gasto mínimo mensual (MXN)</label>
               <input class="form-input mono" type="number" step="0.01" min="0" name="cumpleanos_gasto_minimo_mxn" value="${promo?.cumpleanos_gasto_minimo_mxn ?? ""}" style="width:130px;" />
@@ -241,8 +241,20 @@ async function formularioPromocion(content, promo) {
               <label class="form-label">Durante los últimos cuántos meses</label>
               <input class="form-input mono" type="number" step="1" min="1" name="cumpleanos_meses_historial" value="${promo?.cumpleanos_meses_historial ?? ""}" style="width:90px;" />
             </div>
+            <div class="form-row" style="margin:0;">
+              <label class="form-label">Días antes de la fecha</label>
+              <input class="form-input mono" type="number" step="1" min="0" name="cumpleanos_dias_antes" value="${promo?.cumpleanos_dias_antes ?? ""}" style="width:90px;" />
+            </div>
+            <div class="form-row" style="margin:0;">
+              <label class="form-label">Días después de la fecha</label>
+              <input class="form-input mono" type="number" step="1" min="0" name="cumpleanos_dias_despues" value="${promo?.cumpleanos_dias_despues ?? ""}" style="width:90px;" />
+            </div>
+            <div class="form-row" style="margin:0;">
+              <label class="form-label">Máximo de veces a redimir</label>
+              <input class="form-input mono" type="number" step="1" min="1" name="cumpleanos_limite_usos" value="${promo?.cumpleanos_limite_usos ?? ""}" style="width:90px;" />
+            </div>
           </div>
-          <span class="form-hint" style="display:block;margin-top:4px;">Solo la ven clientes cuyo cumpleaños cae este mes Y que cumplieron ese gasto mínimo en CADA UNO de esos meses (no basta un mes bueno suelto).</span>
+          <span class="form-hint" style="display:block;margin-top:4px;">Solo la ve un cliente desde "días antes" hasta "días después" de su fecha exacta de nacimiento, si cumplió el gasto mínimo en CADA UNO de esos meses anteriores (no basta un mes bueno suelto), y mientras no haya redimido ya el máximo de veces dentro de esa ventana.</span>
         </div>
       </div>
       <div class="banner banner-warning" style="margin-top:4px;">
@@ -302,8 +314,15 @@ async function formularioPromocion(content, promo) {
     if (ventana && (!form.get("hora_inicio") || !form.get("hora_fin"))) {
       return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Falta la hora de inicio o de fin de la ventana.</div>`);
     }
-    if (soloCumpleanos && (!form.get("cumpleanos_gasto_minimo_mxn") || !form.get("cumpleanos_meses_historial"))) {
-      return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Falta el gasto mínimo o el número de meses para la promo de cumpleaños.</div>`);
+    if (
+      soloCumpleanos &&
+      (!form.get("cumpleanos_gasto_minimo_mxn") ||
+        !form.get("cumpleanos_meses_historial") ||
+        form.get("cumpleanos_dias_antes") === "" ||
+        form.get("cumpleanos_dias_despues") === "" ||
+        !form.get("cumpleanos_limite_usos"))
+    ) {
+      return (modal.querySelector("#modal-error").innerHTML = `<div class="form-error">Completa gasto mínimo, meses, días antes/después y máximo de veces para la promo de cumpleaños.</div>`);
     }
 
     const datos = {
@@ -323,6 +342,21 @@ async function formularioPromocion(content, promo) {
     datos.dias_semana = ventana ? form.getAll("dias_semana").map(Number) : null;
     datos.hora_inicio = ventana ? form.get("hora_inicio") : null;
     datos.hora_fin = ventana ? form.get("hora_fin") : null;
+
+    datos.solo_cumpleanos = soloCumpleanos;
+    if (soloCumpleanos) {
+      datos.cumpleanos_gasto_minimo_mxn = Number(form.get("cumpleanos_gasto_minimo_mxn"));
+      datos.cumpleanos_meses_historial = Number(form.get("cumpleanos_meses_historial"));
+      datos.cumpleanos_dias_antes = Number(form.get("cumpleanos_dias_antes"));
+      datos.cumpleanos_dias_despues = Number(form.get("cumpleanos_dias_despues"));
+      datos.cumpleanos_limite_usos = Number(form.get("cumpleanos_limite_usos"));
+    } else {
+      datos.cumpleanos_gasto_minimo_mxn = null;
+      datos.cumpleanos_meses_historial = null;
+      datos.cumpleanos_dias_antes = null;
+      datos.cumpleanos_dias_despues = null;
+      datos.cumpleanos_limite_usos = null;
+    }
 
     try {
       if (editando) await api.patch(`/promociones/${promo.id}`, datos);

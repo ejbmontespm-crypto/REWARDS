@@ -70,10 +70,6 @@ export default function TabsLayout() {
         name="promociones"
         options={{ title: "Promociones", tabBarIcon: ({ color, size }) => <Ionicons name="megaphone" size={size + 4} color={color} /> }}
       />
-      <Tabs.Screen
-        name="perfil"
-        options={{ title: "Perfil", tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size + 4} color={color} /> }}
-      />
     </Tabs>
   );
 }

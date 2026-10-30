@@ -46,6 +46,7 @@ function RootNavigator() {
       <Stack.Protected guard={sesion?.tipo === "cliente"}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="mi-qr" options={{ presentation: "fullScreenModal", headerShown: false }} />
+        <Stack.Screen name="perfil" options={{ title: "Perfil", ...opcionesHeaderTema }} />
         <Stack.Screen name="notificaciones" options={{ presentation: "modal", title: "Notificaciones", ...opcionesHeaderTema }} />
         <Stack.Screen name="pedido/[id]" options={{ title: "Tu pedido", ...opcionesHeaderTema }} />
         <Stack.Screen name="promocion/[id]" options={{ presentation: "modal", headerShown: false }} />

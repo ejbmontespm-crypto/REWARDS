@@ -161,7 +161,15 @@ export default function Inicio() {
       refreshControl={<RefreshControl refreshing={refrescando} onRefresh={() => cargar(true)} tintColor={colores.acento} />}
     >
       <View style={estilos.encabezado}>
-        <Text style={estilos.saludo}>Hola, {datos?.cliente?.nombre}</Text>
+        <Pressable
+          style={({ pressed }) => [estilos.grupoPerfil, pressed && { opacity: 0.6 }]}
+          onPress={() => router.push("/perfil")}
+        >
+          <View style={estilos.avatar}>
+            <Text style={estilos.avatarTexto}>{(datos?.cliente?.nombre || "?").charAt(0).toUpperCase()}</Text>
+          </View>
+          <Text style={estilos.saludo}>Hola, {datos?.cliente?.nombre}</Text>
+        </Pressable>
         <Pressable style={({ pressed }) => pressed && { opacity: 0.6 }} onPress={() => router.push("/notificaciones")}>
           <View>
             <Ionicons name="notifications-outline" size={24} color={colores.texto} />
@@ -206,7 +214,7 @@ export default function Inicio() {
           <Text style={estilos.bannerTexto}>🎉 ¡Tienes una recompensa lista para redimir!</Text>
           <Pressable
             style={({ pressed }) => [estilos.botonRedimir, pressed && estilos.botonPresionado]}
-            onPress={() => router.push("/carrito")}
+            onPress={() => router.push("/carrito?tab=nuevo")}
           >
             <Text style={estilos.textoBotonRedimir}>Redimir</Text>
           </Pressable>
@@ -216,7 +224,7 @@ export default function Inicio() {
       {datos?.pedidos_en_curso?.length ? (
         <Pressable
           style={({ pressed }) => [estilos.resumenPedidos, pressed && estilos.resumenPedidosPresionado]}
-          onPress={() => router.push("/carrito")}
+          onPress={() => router.push("/carrito?tab=en_curso")}
         >
           <View style={estilos.resumenIcono}>
             <Ionicons name="receipt" size={18} color="#fff" />
@@ -251,7 +259,17 @@ function crearEstilos(colores) {
     contenedor: { flex: 1, backgroundColor: colores.fondo },
     centro: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colores.fondo },
     encabezado: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-    saludo: { fontSize: tipografia.lg, fontWeight: "700", color: colores.texto },
+    grupoPerfil: { flexDirection: "row", alignItems: "center", gap: 10, flexShrink: 1 },
+    avatar: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: colores.acento,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    avatarTexto: { color: "#fff", fontSize: 14.5, fontWeight: "700" },
+    saludo: { fontSize: tipografia.lg, fontWeight: "700", color: colores.texto, flexShrink: 1 },
     badgeCampana: {
       position: "absolute",
       top: -4,

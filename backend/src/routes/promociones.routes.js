@@ -41,19 +41,39 @@ function validarVentanaHoraria({ dias_semana, hora_inicio, hora_fin }) {
 const esVistaAdmin = (req) => req.query.todas === "true";
 
 /**
- * Elegible para una promo de cumpleaños: su cumpleaños cae en el mes
- * actual, Y cada uno de los últimos `mesesHistorial` meses (completos,
- * sin contar el actual) tuvo compras por al menos `gastoMinimo` — no
- * basta con un mes bueno suelto, tiene que ser constante.
+ * Elegible para una promo de cumpleaños: hoy cae dentro de la ventana
+ * [fecha exacta de nacimiento - diasAntes, fecha exacta + diasDespues]
+ * (se prueba contra el cumpleaños del año pasado, este año y el que
+ * viene, para que la ventana no se rompa cuando cruza el 31-dic/1-ene),
+ * Y cada uno de los últimos `mesesHistorial` meses (completos, sin
+ * contar el actual) tuvo compras por al menos `gastoMinimo`, Y todavía
+ * no se agotó `limiteUsos` dentro de esa misma ventana.
  */
-async function clienteElegibleCumpleanos(clienteId, mesesHistorial, gastoMinimo) {
+async function clienteElegibleCumpleanos(clienteId, promo) {
+  const { cumpleanos_dias_antes: diasAntes, cumpleanos_dias_despues: diasDespues, cumpleanos_limite_usos: limiteUsos, cumpleanos_meses_historial: mesesHistorial, cumpleanos_gasto_minimo_mxn: gastoMinimo, producto_id: productoId } = promo;
+
   const { rows } = await query(`select fecha_nacimiento from clientes where id = $1`, [clienteId]);
   const fechaNacimiento = rows[0]?.fecha_nacimiento;
   if (!fechaNacimiento) return false;
 
-  const mesNacimiento = Number(fechaNacimiento.slice(5, 7));
-  const mesActual = new Date().getMonth() + 1;
-  if (mesNacimiento !== mesActual) return false;
+  const mes = Number(fechaNacimiento.slice(5, 7));
+  const dia = Number(fechaNacimiento.slice(8, 10));
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  let ventana = null;
+  for (const anio of [hoy.getFullYear() - 1, hoy.getFullYear(), hoy.getFullYear() + 1]) {
+    const cumple = new Date(anio, mes - 1, dia);
+    const desde = new Date(cumple);
+    desde.setDate(desde.getDate() - diasAntes);
+    const hasta = new Date(cumple);
+    hasta.setDate(hasta.getDate() + diasDespues);
+    if (hoy >= desde && hoy <= hasta) {
+      ventana = { desde, hasta };
+      break;
+    }
+  }
+  if (!ventana) return false;
 
   const { rows: incumplidos } = await query(
     `select 1 from generate_series(1, $2::int) as gs(n)
@@ -66,7 +86,21 @@ async function clienteElegibleCumpleanos(clienteId, mesesHistorial, gastoMinimo)
      limit 1`,
     [clienteId, mesesHistorial, gastoMinimo]
   );
-  return incumplidos.length === 0;
+  if (incumplidos.length > 0) return false;
+
+  if (limiteUsos > 0 && productoId) {
+    const { rows: usos } = await query(
+      `select count(*)::int as total
+       from pedido_items pi
+       join pedidos p on p.id = pi.pedido_id
+       where p.cliente_id = $1 and pi.producto_id = $2 and p.estado <> 'cancelado'
+         and p.created_at >= $3 and p.created_at <= $4`,
+      [clienteId, productoId, ventana.desde, ventana.hasta]
+    );
+    if (usos[0].total >= limiteUsos) return false;
+  }
+
+  return true;
 }
 
 promocionesRouter.get(
@@ -109,10 +143,7 @@ promocionesRouter.get(
         promociones.push(promo);
         continue;
       }
-      if (
-        req.cliente &&
-        (await clienteElegibleCumpleanos(req.cliente.id, promo.cumpleanos_meses_historial, promo.cumpleanos_gasto_minimo_mxn))
-      ) {
+      if (req.cliente && (await clienteElegibleCumpleanos(req.cliente.id, promo))) {
         promociones.push(promo);
       }
     }
@@ -145,10 +176,24 @@ promocionesRouter.post(
       solo_cumpleanos,
       cumpleanos_meses_historial,
       cumpleanos_gasto_minimo_mxn,
+      cumpleanos_dias_antes,
+      cumpleanos_dias_despues,
+      cumpleanos_limite_usos,
     } = req.body || {};
     if (!titulo?.trim()) throw badRequest("Falta titulo");
-    if (solo_cumpleanos && !(cumpleanos_meses_historial > 0 && cumpleanos_gasto_minimo_mxn > 0)) {
-      throw badRequest("Una promo de cumpleaños necesita cumpleanos_meses_historial y cumpleanos_gasto_minimo_mxn, ambos mayores a 0");
+    if (
+      solo_cumpleanos &&
+      !(
+        cumpleanos_meses_historial > 0 &&
+        cumpleanos_gasto_minimo_mxn > 0 &&
+        cumpleanos_dias_antes >= 0 &&
+        cumpleanos_dias_despues >= 0 &&
+        cumpleanos_limite_usos > 0
+      )
+    ) {
+      throw badRequest(
+        "Una promo de cumpleaños necesita cumpleanos_meses_historial y cumpleanos_gasto_minimo_mxn mayores a 0, cumpleanos_dias_antes y cumpleanos_dias_despues (>= 0), y cumpleanos_limite_usos mayor a 0"
+      );
     }
     if (!TIPOS_ARCHIVO.includes(tipo_archivo)) throw badRequest(`tipo_archivo debe ser uno de: ${TIPOS_ARCHIVO.join(", ")}`);
     if (!archivo_path?.trim()) throw badRequest("Falta archivo_path");
@@ -181,8 +226,8 @@ promocionesRouter.post(
     const { rows } = await query(
       `insert into promociones_informativas
          (titulo, descripcion, tipo_archivo, archivo_path, fecha_inicio, fecha_fin, activa, segmentos, creado_por, producto_id, dias_semana, hora_inicio, hora_fin,
-          solo_cumpleanos, cumpleanos_meses_historial, cumpleanos_gasto_minimo_mxn)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::smallint[], $12, $13, $14, $15, $16)
+          solo_cumpleanos, cumpleanos_meses_historial, cumpleanos_gasto_minimo_mxn, cumpleanos_dias_antes, cumpleanos_dias_despues, cumpleanos_limite_usos)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::smallint[], $12, $13, $14, $15, $16, $17, $18, $19)
        returning *`,
       [
         titulo.trim(),
@@ -201,6 +246,9 @@ promocionesRouter.post(
         Boolean(solo_cumpleanos),
         solo_cumpleanos ? cumpleanos_meses_historial : null,
         solo_cumpleanos ? cumpleanos_gasto_minimo_mxn : null,
+        solo_cumpleanos ? cumpleanos_dias_antes : null,
+        solo_cumpleanos ? cumpleanos_dias_despues : null,
+        solo_cumpleanos ? cumpleanos_limite_usos : null,
       ]
     );
     const promocion = rows[0];
@@ -237,6 +285,9 @@ const CAMPOS_EDITABLES = [
   "solo_cumpleanos",
   "cumpleanos_meses_historial",
   "cumpleanos_gasto_minimo_mxn",
+  "cumpleanos_dias_antes",
+  "cumpleanos_dias_despues",
+  "cumpleanos_limite_usos",
 ];
 
 promocionesRouter.patch(
@@ -271,8 +322,16 @@ promocionesRouter.patch(
     const soloCumpleanosFinal = "solo_cumpleanos" in cambios ? cambios.solo_cumpleanos : actual.solo_cumpleanos;
     const mesesFinal = "cumpleanos_meses_historial" in cambios ? cambios.cumpleanos_meses_historial : actual.cumpleanos_meses_historial;
     const gastoFinal = "cumpleanos_gasto_minimo_mxn" in cambios ? cambios.cumpleanos_gasto_minimo_mxn : actual.cumpleanos_gasto_minimo_mxn;
-    if (soloCumpleanosFinal && !(mesesFinal > 0 && gastoFinal > 0)) {
-      throw badRequest("Una promo de cumpleaños necesita cumpleanos_meses_historial y cumpleanos_gasto_minimo_mxn, ambos mayores a 0");
+    const diasAntesFinal = "cumpleanos_dias_antes" in cambios ? cambios.cumpleanos_dias_antes : actual.cumpleanos_dias_antes;
+    const diasDespuesFinal = "cumpleanos_dias_despues" in cambios ? cambios.cumpleanos_dias_despues : actual.cumpleanos_dias_despues;
+    const limiteUsosFinal = "cumpleanos_limite_usos" in cambios ? cambios.cumpleanos_limite_usos : actual.cumpleanos_limite_usos;
+    if (
+      soloCumpleanosFinal &&
+      !(mesesFinal > 0 && gastoFinal > 0 && diasAntesFinal >= 0 && diasDespuesFinal >= 0 && limiteUsosFinal > 0)
+    ) {
+      throw badRequest(
+        "Una promo de cumpleaños necesita cumpleanos_meses_historial y cumpleanos_gasto_minimo_mxn mayores a 0, cumpleanos_dias_antes y cumpleanos_dias_despues (>= 0), y cumpleanos_limite_usos mayor a 0"
+      );
     }
 
     // "Se puede pedir desde el menú" en edición: si ya tenía producto

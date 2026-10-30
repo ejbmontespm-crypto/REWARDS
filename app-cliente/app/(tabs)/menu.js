@@ -142,7 +142,7 @@ export default function Menu() {
       {items.length > 0 ? (
         <Pressable
           style={({ pressed }) => [estilos.botonCarrito, pressed && estilos.botonCarritoPresionado]}
-          onPress={() => router.push("/carrito")}
+          onPress={() => router.push("/carrito?tab=nuevo")}
         >
           <Text style={estilos.textoBotonCarrito}>Ver carrito ({items.reduce((s, i) => s + i.cantidad, 0)})</Text>
         </Pressable>

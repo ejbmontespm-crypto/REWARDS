@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useCarrito } from "../../lib/contextoCarrito";
 import { useTema } from "../../lib/contextoTema";
@@ -39,6 +39,7 @@ function generarSlots(pickupInmediato) {
 
 export default function Carrito() {
   const router = useRouter();
+  const { tab: tabSolicitado } = useLocalSearchParams();
   const { colores } = useTema();
   const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const { items, quitar, cambiarCantidad, vaciar, total } = useCarrito();
@@ -55,13 +56,19 @@ export default function Carrito() {
   const [pedidosEnCurso, setPedidosEnCurso] = useState(null);
   const [tab, setTab] = useState(null); // null = aún no decidido (espera datos); luego "en_curso" | "nuevo"
 
+  // El tab pedido por query param (desde Menú o el atajo de Inicio) manda
+  // sobre el default calculado a partir de los datos.
+  useEffect(() => {
+    if (tabSolicitado === "en_curso" || tabSolicitado === "nuevo") setTab(tabSolicitado);
+  }, [tabSolicitado]);
+
   useEffect(() => {
     Promise.all([api.get("/configuracion-recompensa/activa"), api.get("/clientes/me"), api.get("/promociones")])
       .then(([conf, me, promos]) => {
         setConfig(conf.configuracion);
         setSaldo(me.saldo);
         setPedidosEnCurso(me.pedidos_en_curso || []);
-        setTab((actual) => actual ?? (me.pedidos_en_curso?.length ? "en_curso" : "nuevo"));
+        setTab((actual) => actual ?? (tabSolicitado === "en_curso" || tabSolicitado === "nuevo" ? tabSolicitado : me.pedidos_en_curso?.length ? "en_curso" : "nuevo"));
         setPromosVentana(
           Object.fromEntries(promos.promociones.filter((p) => p.producto_id && p.hora_inicio).map((p) => [p.producto_id, p]))
         );

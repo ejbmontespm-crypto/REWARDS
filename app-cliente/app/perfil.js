@@ -2,9 +2,9 @@ import { useCallback, useMemo, useState } from "react";
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Switch } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
-import { api, ApiError } from "../../lib/api";
-import { useSession } from "../../lib/contextoSesion";
-import { useTema } from "../../lib/contextoTema";
+import { api, ApiError } from "../lib/api";
+import { useSession } from "../lib/contextoSesion";
+import { useTema } from "../lib/contextoTema";
 
 const ETIQUETA_PERFIL = { alumno: "Alumno", docente: "Docente", otro: "Otro" };
 const ETIQUETA_TIPO_MONEDERO = {
@@ -102,7 +102,7 @@ export default function Perfil() {
   }
 
   return (
-    <SafeAreaView style={estilos.contenedor} edges={["top"]}>
+    <SafeAreaView style={estilos.contenedor} edges={["bottom"]}>
     <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
       {!cliente?.confirmado_en_ciclo_actual ? (
         <View style={estilos.banner}>
