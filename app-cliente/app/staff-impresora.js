@@ -8,6 +8,7 @@ import {
   guardarConfigImpresora,
   listarDispositivosEmparejados,
   imprimirEtiquetaDirecto,
+  imprimirDiagnosticoFuentes,
 } from "../lib/impresoraEtiquetas";
 
 // Pedido de prueba — no necesita existir de verdad, solo sirve para
@@ -77,6 +78,19 @@ export default function ConfigurarImpresora() {
     }
   }
 
+  async function probarDiagnosticoFuentes() {
+    setProbando(true);
+    setError("");
+    try {
+      await imprimirDiagnosticoFuentes();
+      mostrarToast("✓ Etiqueta de diagnóstico enviada");
+    } catch (err) {
+      setError(err.message || "No se pudo imprimir el diagnóstico.");
+    } finally {
+      setProbando(false);
+    }
+  }
+
   if (cargando) {
     return (
       <View style={estilos.centro}>
@@ -127,6 +141,14 @@ export default function ConfigurarImpresora() {
           <Pressable style={estilos.botonProbar} onPress={probarImpresion} disabled={probando}>
             {probando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBoton}>Imprimir etiqueta de prueba</Text>}
           </Pressable>
+
+          <Pressable style={estilos.botonDiagnostico} onPress={probarDiagnosticoFuentes} disabled={probando}>
+            {probando ? (
+              <ActivityIndicator color={colores.acento} />
+            ) : (
+              <Text style={estilos.textoBotonDiagnostico}>Diagnóstico: probar 7 fuentes a la vez</Text>
+            )}
+          </Pressable>
         </>
       ) : null}
 
@@ -152,6 +174,8 @@ function crearEstilos(colores) {
     filaSwitch: { flexDirection: "row", alignItems: "center", gap: 10 },
     botonProbar: { backgroundColor: colores.acento, borderRadius: 10, paddingVertical: 14, alignItems: "center" },
     textoBoton: { color: "#fff", fontWeight: "700", fontSize: 14 },
+    botonDiagnostico: { borderWidth: 1, borderColor: colores.acento, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
+    textoBotonDiagnostico: { color: colores.acento, fontWeight: "600", fontSize: 13 },
     error: { color: colores.peligro, fontSize: 13 },
   });
 }

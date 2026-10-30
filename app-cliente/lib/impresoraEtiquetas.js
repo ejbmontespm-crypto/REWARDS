@@ -114,11 +114,10 @@ async function escribirBloques(direccion, bloques) {
   }
 }
 
-export async function imprimirEtiquetaDirecto(pedido) {
+async function enviarBloques(bloques) {
   const config = await obtenerConfigImpresora();
   if (!config.direccion) throw new Error("No hay impresora configurada.");
 
-  const bloques = construirComandosTspl(pedido);
   const yaConectado = await RNBluetoothClassic.isDeviceConnected(config.direccion);
   if (!yaConectado) await RNBluetoothClassic.connectToDevice(config.direccion);
 
@@ -129,4 +128,33 @@ export async function imprimirEtiquetaDirecto(pedido) {
     await RNBluetoothClassic.connectToDevice(config.direccion);
     await escribirBloques(config.direccion, bloques);
   }
+}
+
+export async function imprimirEtiquetaDirecto(pedido) {
+  await enviarBloques(construirComandosTspl(pedido));
+}
+
+/** SOLO diagnóstico: el texto real sale como bloques negros sólidos sin
+ *  que cambie con CODEPAGE ni con SPEED/DENSITY — eso apunta a que el
+ *  identificador de fuente ("2"/"3", el numérico estándar de TSC) no
+ *  existe en este firmware clon y la impresora rellena la caja completa
+ *  en vez de no dibujar nada. Esta etiqueta prueba varios identificadores
+ *  de fuente a la vez (numéricos y nombres de fuente residente comunes en
+ *  clones chinos) para ver cuál — si alguno — se imprime legible, en una
+ *  sola pasada en vez de un build por cada intento. Bórrese cuando ya se
+ *  sepa cuál fuente usar de verdad. */
+export function construirComandosDiagnosticoFuentes() {
+  const fuentes = ["1", "2", "3", "4", "TSS24.BF2", "ROMAN.TTF", "SIMPLIFIED.TTF"];
+  const comandos = ["SIZE 40 mm,60 mm", "GAP 2 mm,0 mm", "SPEED 5", "DENSITY 8", "DIRECTION 0", "CODEPAGE UTF-8", "CLS"];
+  let y = 16;
+  for (const fuente of fuentes) {
+    comandos.push(`TEXT 16,${y},"${fuente}",0,1,1,"${fuente}: ABC123"`);
+    y += 40;
+  }
+  comandos.push("PRINT 1");
+  return [comandos.join("\r\n") + "\r\n"];
+}
+
+export async function imprimirDiagnosticoFuentes() {
+  await enviarBloques(construirComandosDiagnosticoFuentes());
 }
