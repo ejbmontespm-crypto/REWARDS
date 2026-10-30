@@ -10,6 +10,7 @@
     "expo": "~57.0.31",
     "expo-camera": "~57.0.6",
     "expo-constants": "~57.0.19",
+    "expo-dev-client": "~57.0.20",
     "expo-font": "~57.0.4",
     "expo-linking": "~57.0.13",
     "expo-notifications": "~57.0.24",
