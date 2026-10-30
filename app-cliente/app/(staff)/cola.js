@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Modal } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Modal, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import QRCode from "react-native-qrcode-svg";
@@ -323,35 +323,51 @@ export default function ColaPedidos() {
 }
 
 function EtiquetaPedido({ pedido, estilos, colores, logoUrl }) {
-  const [generando, setGenerando] = useState(false);
+  const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState("");
 
-  async function generarPdf() {
-    setGenerando(true);
+  async function imprimirAhora() {
+    setProcesando(true);
+    setError("");
+    try {
+      await imprimirEtiquetaDirecto(pedido);
+      mostrarToast("✓ Etiqueta impresa");
+    } catch (err) {
+      setError(err.message || "No se pudo imprimir la etiqueta.");
+    } finally {
+      setProcesando(false);
+    }
+  }
+
+  async function descargarPdf() {
+    setProcesando(true);
     setError("");
     try {
       await generarYCompartirEtiqueta(pedido, logoUrl);
     } catch {
-      setError("No se pudo generar el PDF de prueba.");
+      setError("No se pudo generar el PDF.");
     } finally {
-      setGenerando(false);
+      setProcesando(false);
     }
+  }
+
+  function tocarQr() {
+    Alert.alert("Etiqueta del pedido", "¿Qué quieres hacer?", [
+      { text: "Imprimir ahora", onPress: imprimirAhora },
+      { text: "Descargar PDF", onPress: descargarPdf },
+      { text: "Cancelar", style: "cancel" },
+    ]);
   }
 
   return (
     <View style={estilos.bloqueQrEtiqueta}>
-      <QRCode value={pedido.id} size={64} />
+      <Pressable onPress={tocarQr} disabled={procesando}>
+        {procesando ? <ActivityIndicator color={colores.acento} style={{ width: 64, height: 64 }} /> : <QRCode value={pedido.id} size={64} />}
+      </Pressable>
       <View style={{ flex: 1, gap: 4 }}>
         <Text style={estilos.notaQrEtiqueta}>
-          Ticket del pedido — imprímelo ahora (cuando haya impresora conectada) y escanéalo al entregar
+          Toca el código QR para imprimir la etiqueta o descargarla — luego escanéalo al entregar.
         </Text>
-        <Pressable onPress={generarPdf} disabled={generando}>
-          {generando ? (
-            <ActivityIndicator color={colores.acento} size="small" />
-          ) : (
-            <Text style={estilos.linkPdf}>Vista previa en PDF (tamaño real 40×60mm)</Text>
-          )}
-        </Pressable>
         {error ? <Text style={[estilos.error, { fontSize: 11 }]}>{error}</Text> : null}
       </View>
     </View>
@@ -381,7 +397,6 @@ function crearEstilos(colores) {
     filaBotones: { flexDirection: "row", gap: 8, marginTop: 6 },
     bloqueQrEtiqueta: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8, padding: 8, backgroundColor: colores.fondo, borderRadius: 8 },
     notaQrEtiqueta: { fontSize: 11, color: colores.textoMuted, lineHeight: 15 },
-    linkPdf: { fontSize: 11.5, color: colores.acento, fontWeight: "600" },
     notaPendientePago: { flex: 1, fontSize: 11.5, color: colores.textoMuted, lineHeight: 15 },
     botonAvanzar: { flex: 1, backgroundColor: colores.acento, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
     textoBoton: { color: "#fff", fontWeight: "600", fontSize: 13 },
