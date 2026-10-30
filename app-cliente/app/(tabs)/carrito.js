@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Linking } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useCarrito } from "../../lib/contextoCarrito";
 import { useTema } from "../../lib/contextoTema";
 import { radios, sombra } from "../../constants/theme";
+import { ETIQUETA_PASO_PEDIDO } from "../../components/PedidoProgreso";
+
+const COLOR_ESTADO = {
+  pendiente_pago: { fondo: "#fff7e6", texto: "#8a6d1f" },
+  recibido: { fondo: "#eef2ff", texto: "#3b4ba8" },
+  preparando: { fondo: "#fff3e0", texto: "#b4690e" },
+  listo: { fondo: "#e8f7ee", texto: "#1f7a43" },
+};
 
 function generarSlots(pickupInmediato) {
   const slots = [];
@@ -43,18 +51,34 @@ export default function Carrito() {
   const [metodoPago, setMetodoPago] = useState("caja"); // "caja" | "mercadopago"
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState("");
+  const [pedidosEnCurso, setPedidosEnCurso] = useState(null);
+  const [tab, setTab] = useState(null); // null = aún no decidido (espera datos); luego "en_curso" | "nuevo"
 
   useEffect(() => {
     Promise.all([api.get("/configuracion-recompensa/activa"), api.get("/clientes/me"), api.get("/promociones")])
       .then(([conf, me, promos]) => {
         setConfig(conf.configuracion);
         setSaldo(me.saldo);
+        setPedidosEnCurso(me.pedidos_en_curso || []);
+        setTab((actual) => actual ?? (me.pedidos_en_curso?.length ? "en_curso" : "nuevo"));
         setPromosVentana(
           Object.fromEntries(promos.promociones.filter((p) => p.producto_id && p.hora_inicio).map((p) => [p.producto_id, p]))
         );
       })
       .catch(() => {});
   }, []);
+
+  // Refresco silencioso de la lista "Pedidos en curso" al volver a esta
+  // pestaña — mismo criterio que Inicio, para que el estatus no se vea
+  // viejo si el staff avanzó algo mientras el cliente andaba en otra parte.
+  useFocusEffect(
+    useCallback(() => {
+      api
+        .get("/clientes/me")
+        .then((me) => setPedidosEnCurso(me.pedidos_en_curso || []))
+        .catch(() => {});
+    }, [])
+  );
 
   const promoLimitante = items.map((i) => promosVentana[i.producto_id]).find(Boolean) || null;
   const slots = useMemo(() => generarSlots(Boolean(promoLimitante)), [promoLimitante]);
@@ -124,10 +148,65 @@ export default function Carrito() {
     }
   }
 
+  if (tab === null) {
+    return (
+      <SafeAreaView style={estilos.contenedor} edges={["top"]}>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator color={colores.acento} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={estilos.contenedor} edges={["top"]}>
-    <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+    <View style={{ padding: 20, paddingBottom: 0, gap: 14 }}>
       <Text style={estilos.titulo}>Carrito</Text>
+      <View style={estilos.segmentado}>
+        <Pressable style={[estilos.segmento, tab === "en_curso" && estilos.segmentoActivo]} onPress={() => setTab("en_curso")}>
+          <Text style={[estilos.textoSegmento, tab === "en_curso" && estilos.textoSegmentoActivo]}>
+            Pedidos en curso{pedidosEnCurso?.length ? ` (${pedidosEnCurso.length})` : ""}
+          </Text>
+        </Pressable>
+        <Pressable style={[estilos.segmento, tab === "nuevo" && estilos.segmentoActivo]} onPress={() => setTab("nuevo")}>
+          <Text style={[estilos.textoSegmento, tab === "nuevo" && estilos.textoSegmentoActivo]}>Nuevo pedido</Text>
+        </Pressable>
+      </View>
+    </View>
+
+    {tab === "en_curso" ? (
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 12 }}>
+        {pedidosEnCurso?.length ? (
+          pedidosEnCurso.map((p) => {
+            const color = COLOR_ESTADO[p.estado] || { fondo: "#f1efe9", texto: colores.textoMuted };
+            const cantidadProductos = p.items?.reduce((s, i) => s + i.cantidad, 0) || 0;
+            return (
+              <Pressable
+                key={p.id}
+                style={({ pressed }) => [estilos.tarjetaEnCurso, pressed && estilos.tarjetaPresionada]}
+                onPress={() => router.push(`/pedido/${p.id}`)}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <Text style={estilos.folioEnCurso}>{p.folio || p.id.slice(0, 8)}</Text>
+                  <View style={[estilos.badgeEstado, { backgroundColor: color.fondo }]}>
+                    <Text style={[estilos.textoBadgeEstado, { color: color.texto }]}>{ETIQUETA_PASO_PEDIDO[p.estado] || p.estado}</Text>
+                  </View>
+                </View>
+                <Text style={estilos.resumenEnCurso}>
+                  {cantidadProductos} producto{cantidadProductos === 1 ? "" : "s"} — ${Number(p.total_mxn).toFixed(0)}
+                </Text>
+                <Text style={estilos.pickupEnCurso}>
+                  Pickup {new Date(p.hora_pickup).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}
+                </Text>
+              </Pressable>
+            );
+          })
+        ) : (
+          <Text style={estilos.vacio}>No tienes pedidos activos por ahora.</Text>
+        )}
+      </ScrollView>
+    ) : (
+    <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
       {items.length === 0 ? (
         <Text style={estilos.vacio}>Tu carrito está vacío.</Text>
       ) : (
@@ -264,6 +343,7 @@ export default function Carrito() {
         </>
       ) : null}
     </ScrollView>
+    )}
     </SafeAreaView>
   );
 }
@@ -282,6 +362,18 @@ function crearEstilos(colores) {
     contenedor: { flex: 1, backgroundColor: colores.fondo },
     titulo: { fontSize: 18, fontWeight: "700", color: colores.texto },
     vacio: { textAlign: "center", color: colores.textoMuted, marginTop: 40 },
+    segmentado: { flexDirection: "row", backgroundColor: colores.superficie, borderRadius: 12, padding: 4 },
+    segmento: { flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: "center" },
+    segmentoActivo: { backgroundColor: colores.acento },
+    textoSegmento: { fontSize: 12.5, fontWeight: "600", color: colores.textoMuted },
+    textoSegmentoActivo: { color: "#fff" },
+    tarjetaEnCurso: { backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde, borderRadius: radios.medio, padding: 16, gap: 4, ...sombra.suave },
+    tarjetaPresionada: { opacity: 0.9, transform: [{ scale: 0.99 }] },
+    folioEnCurso: { fontSize: 11, fontWeight: "700", color: colores.textoMuted },
+    badgeEstado: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
+    textoBadgeEstado: { fontSize: 10.5, fontWeight: "700" },
+    resumenEnCurso: { fontSize: 14, fontWeight: "600", color: colores.texto, marginTop: 6 },
+    pickupEnCurso: { fontSize: 11.5, color: colores.textoMuted, marginTop: 2 },
     itemFila: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colores.superficie, borderRadius: radios.medio, padding: 12, ...sombra.suave },
     itemNombre: { fontSize: 14, fontWeight: "600", color: colores.texto },
     itemExtras: { fontSize: 11.5, color: colores.textoMuted, marginTop: 2 },

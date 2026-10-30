@@ -8,20 +8,36 @@ import * as Sharing from "expo-sharing";
 import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
 import { construirHtmlEtiqueta } from "../../lib/etiquetaPedido";
+import { obtenerConfigImpresora, imprimirEtiquetaDirecto } from "../../lib/impresoraEtiquetas";
+import { mostrarToast } from "../../lib/toast";
 
 const SIGUIENTE_ESTADO = { recibido: "preparando", preparando: "listo" };
 const ETIQUETA_ESTADO = { pendiente_pago: "Esperando pago", recibido: "Recibido", preparando: "Preparando", listo: "Listo", entregado: "Entregado" };
 const ETIQUETA_AVANZAR = { recibido: "Empezar a preparar", preparando: "Marcar listo" };
 
-/** Genera el PDF de la etiqueta del pedido y abre el share sheet — mientras
- *  no haya impresora conectada, esto hace las veces de "imprimir": el
- *  staff puede guardarlo, verlo o mandarlo a cualquier impresora que ya
- *  tenga emparejada. Cuando exista el driver real de la Xprinter, esta
- *  misma función es la que cambia por el envío directo por Bluetooth. */
+/** Genera el PDF de la etiqueta y abre el share sheet — SOLO a demanda
+ *  (botón "Vista previa en PDF"), nunca automático: sirve para ver/guardar/
+ *  mandar a cualquier impresora ya emparejada cuando alguien lo pida. */
 async function generarYCompartirEtiqueta(pedido, logoUrl) {
   const html = await construirHtmlEtiqueta(pedido, { logoUrl });
   const { uri } = await Print.printToFileAsync({ html, width: 113, height: 170 }); // ~40x60mm en puntos, respaldo si el motor ignora @page
   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+}
+
+/** Lo que SÍ pasa solo, sin que nadie toque nada: si hay una impresora
+ *  configurada en Más → Impresora de etiquetas y la impresión automática
+ *  está activada, manda directo por Bluetooth. Sin eso configurado, no
+ *  hace nada — ya no cae de respaldo al PDF (eso se quedó como botón a
+ *  demanda, "Vista previa en PDF", para no interrumpir con un share sheet
+ *  en cada pedido mientras nadie configuró una impresora de verdad). */
+async function imprimirAutomaticoSiAplica(pedido) {
+  const config = await obtenerConfigImpresora();
+  if (!config.direccion || !config.automatica) return;
+  try {
+    await imprimirEtiquetaDirecto(pedido);
+  } catch (err) {
+    mostrarToast(`No se pudo imprimir la etiqueta: ${err.message || "error desconocido"}`);
+  }
 }
 
 export default function ColaPedidos() {
@@ -89,11 +105,11 @@ export default function ColaPedidos() {
       setPedidos((prev) => prev.map((p) => (p.id === pedido.id ? { ...p, estado: nuevoEstado } : p)));
 
       // "Para no perder ninguna comanda": en cuanto pasa a preparando, se
-      // genera/comparte el ticket solo, sin que nadie tenga que acordarse
-      // de apretar nada aparte. Si falla (ej. sin apps para compartir
-      // disponibles), no bloquea el flujo — el pedido ya avanzó bien.
+      // manda sola a imprimir — pero solo si ya hay una impresora
+      // configurada (Más → Impresora de etiquetas). Si falla, no bloquea
+      // el flujo — el pedido ya avanzó bien.
       if (nuevoEstado === "preparando") {
-        generarYCompartirEtiqueta(pedido, logoUrl).catch(() => {});
+        imprimirAutomaticoSiAplica(pedido).catch(() => {});
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo avanzar el pedido.");

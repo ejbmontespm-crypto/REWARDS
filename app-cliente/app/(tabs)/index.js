@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Image, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Dimensions, Animated, Vibration } from "react-native";
+import { View, Text, Image, Pressable, StyleSheet, ScrollView, ActivityIndicator, RefreshControl, Animated, Vibration } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { api, ApiError } from "../../lib/api";
 import { useTema } from "../../lib/contextoTema";
 import Logo from "../../components/Logo";
-import PedidoProgreso, { ETIQUETA_PASO_PEDIDO } from "../../components/PedidoProgreso";
+import { ETIQUETA_PASO_PEDIDO } from "../../components/PedidoProgreso";
 import { radios, tipografia, sombra } from "../../constants/theme";
 
 const TAMANO_CROISSANT = 110;
-const ANCHO_TARJETA_PEDIDO = Dimensions.get("window").width - 40; // 40 = padding de 20 a cada lado del ScrollView de Inicio
 
 /** Croissant que se va llenando — progreso de la RECOMPENSA de lealtad (las
  *  3 modalidades), independiente de las tazas (esas son del PEDIDO). Mismo
@@ -85,7 +84,6 @@ export default function Inicio() {
   const [refrescando, setRefrescando] = useState(false);
   const [error, setError] = useState("");
   const [redimiendo, setRedimiendo] = useState(false);
-  const [paginaPedido, setPaginaPedido] = useState(0);
   const [notificacionesNoLeidas, setNotificacionesNoLeidas] = useState(0);
   const escalaCelebracion = useRef(new Animated.Value(1)).current;
   const recompensaListaAnterior = useRef(false);
@@ -229,51 +227,34 @@ export default function Inicio() {
         </Animated.View>
       ) : null}
 
-      <View style={{ gap: 8 }}>
-        <Text style={estilos.seccionTitulo}>Tus pedidos en curso</Text>
-
-        {datos?.pedidos_en_curso?.length ? (
-          <>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={(ev) => setPaginaPedido(Math.round(ev.nativeEvent.contentOffset.x / ANCHO_TARJETA_PEDIDO))}
-            >
-              {datos.pedidos_en_curso.map((p) => (
-                <Pressable
-                  key={p.id}
-                  style={({ pressed }) => [estilos.tarjetaPedido, { width: ANCHO_TARJETA_PEDIDO }, pressed && estilos.tarjetaPresionada]}
-                  onPress={() => router.push(`/pedido/${p.id}`)}
-                >
-                  {p.items?.length ? (
-                    <Text style={estilos.pedidoItems}>{p.items.map((i) => `${i.cantidad}× ${i.producto_nombre}`).join(", ")}</Text>
-                  ) : null}
-                  <Text style={estilos.pedidoResumen}>Total: ${Number(p.total_mxn).toFixed(0)}</Text>
-                  <PedidoProgreso estado={p.estado} tamanoTaza={26} />
-                  <Text style={estilos.pedidoEstado}>Estado: {ETIQUETA_PASO_PEDIDO[p.estado] || p.estado}</Text>
-                  <Text style={estilos.pedidoSub}>Toca para ver el detalle</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-
-            {datos.pedidos_en_curso.length > 1 ? (
-              <View style={estilos.pistaDeslizar}>
-                <Text style={estilos.pistaTexto}>‹ desliza para ver tus otros pedidos ›</Text>
-                <View style={estilos.puntosPedido}>
-                  {datos.pedidos_en_curso.map((_, i) => (
-                    <View key={i} style={[estilos.puntoPedido, i === paginaPedido && estilos.puntoPedidoActivo]} />
-                  ))}
-                </View>
-              </View>
-            ) : null}
-          </>
-        ) : (
-          <View style={estilos.tarjetaPedidoVacia}>
-            <Text style={estilos.pedidoSub}>No tienes pedidos activos por ahora.</Text>
+      {datos?.pedidos_en_curso?.length ? (
+        <Pressable
+          style={({ pressed }) => [estilos.resumenPedidos, pressed && estilos.resumenPedidosPresionado]}
+          onPress={() => router.push("/carrito")}
+        >
+          <View style={estilos.resumenIcono}>
+            <Ionicons name="receipt" size={18} color="#fff" />
           </View>
-        )}
-      </View>
+          <View style={{ flex: 1 }}>
+            <Text style={estilos.resumenTitulo}>
+              Tienes {datos.pedidos_en_curso.length} pedido{datos.pedidos_en_curso.length === 1 ? "" : "s"} en curso
+            </Text>
+            <Text style={estilos.resumenSub}>
+              Más reciente: {ETIQUETA_PASO_PEDIDO[datos.pedidos_en_curso[0].estado] || datos.pedidos_en_curso[0].estado}
+              {datos.pedidos_en_curso[0].folio ? ` — folio ${datos.pedidos_en_curso[0].folio}` : ""}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#fff" />
+        </Pressable>
+      ) : (
+        <View style={estilos.resumenVacio}>
+          <Ionicons name="cafe-outline" size={22} color={colores.textoMuted} />
+          <View style={{ flex: 1 }}>
+            <Text style={estilos.resumenVacioTitulo}>Aún no tienes pedidos en curso</Text>
+            <Text style={estilos.resumenVacioSub}>Arma uno desde el menú y aparecerá aquí.</Text>
+          </View>
+        </View>
+      )}
     </ScrollView>
     </SafeAreaView>
   );
@@ -308,19 +289,31 @@ function crearEstilos(colores) {
     botonRedimir: { backgroundColor: colores.acento, borderRadius: radios.chico, paddingVertical: 11, alignItems: "center" },
     botonPresionado: { opacity: 0.85, transform: [{ scale: 0.97 }] },
     textoBotonRedimir: { color: "#fff", fontWeight: "600" },
-    seccionTitulo: { fontSize: tipografia.base, fontWeight: "700", color: colores.texto },
-    tarjetaPedido: { backgroundColor: colores.superficie, borderRadius: radios.medio, padding: 16, gap: 10, ...sombra.suave },
-    tarjetaPresionada: { opacity: 0.9, transform: [{ scale: 0.98 }] },
-    tarjetaPedidoVacia: { backgroundColor: colores.superficie, borderRadius: radios.medio, padding: 20, alignItems: "center", ...sombra.suave },
-    pedidoTitulo: { fontSize: 14, fontWeight: "700", color: colores.texto },
-    pedidoItems: { fontSize: 12, color: colores.textoMuted, textAlign: "center" },
-    pedidoResumen: { fontSize: 13, fontWeight: "700", color: colores.texto, textAlign: "center" },
-    pedidoEstado: { fontSize: 13, fontWeight: "600", color: colores.texto, textAlign: "center" },
-    pedidoSub: { fontSize: 12, color: colores.textoMuted, marginTop: 2, textAlign: "center" },
-    pistaDeslizar: { alignItems: "center", gap: 6 },
-    pistaTexto: { fontSize: 11, color: colores.textoMuted },
-    puntosPedido: { flexDirection: "row", gap: 5 },
-    puntoPedido: { width: 6, height: 6, borderRadius: 3, backgroundColor: colores.borde },
-    puntoPedidoActivo: { backgroundColor: colores.acento, width: 14 },
+    resumenPedidos: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      backgroundColor: colores.acento,
+      borderRadius: radios.grande,
+      padding: 16,
+      ...sombra.media,
+    },
+    resumenPedidosPresionado: { opacity: 0.92, transform: [{ scale: 0.99 }] },
+    resumenIcono: { width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
+    resumenTitulo: { color: "#fff", fontSize: 14.5, fontWeight: "700" },
+    resumenSub: { color: "rgba(255,255,255,0.78)", fontSize: 12, marginTop: 2 },
+    resumenVacio: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      backgroundColor: colores.superficie,
+      borderRadius: radios.grande,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: colores.borde,
+      borderStyle: "dashed",
+    },
+    resumenVacioTitulo: { fontSize: 13.5, fontWeight: "600", color: colores.texto },
+    resumenVacioSub: { fontSize: 12, color: colores.textoMuted, marginTop: 2 },
   });
 }

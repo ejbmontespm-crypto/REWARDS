@@ -53,6 +53,7 @@ function RootNavigator() {
       <Stack.Protected guard={sesion?.tipo === "staff"}>
         <Stack.Screen name="(staff)" options={{ headerShown: false }} />
         <Stack.Screen name="staff-buscar" options={{ title: "Buscar cliente", ...opcionesHeaderTema }} />
+        <Stack.Screen name="staff-impresora" options={{ title: "Impresora de etiquetas", ...opcionesHeaderTema }} />
       </Stack.Protected>
       <Stack.Protected guard={!sesion}>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

@@ -18,16 +18,18 @@
     "expo-secure-store": "~57.0.4",
     "expo-sharing": "~57.0.24",
     "expo-status-bar": "~57.0.1",
+    "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
-    "qrcode": "^1.5.4",
+    "react-native-bluetooth-classic": "^1.73.0-rc.17",
     "react-native-qrcode-svg": "^6.3.26",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
     "react-native-url-polyfill": "^4.0.0",
-    "react-native-web": "^0.21.2"
+    "react-native-web": "^0.21.2",
+    "with-rn-bluetooth-classic": "^1.0.5"
   },
   "scripts": {
     "start": "expo start",
@@ -35,5 +37,13 @@
     "ios": "expo start --ios",
     "web": "expo start --web"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": ["react-native-bluetooth-classic"],
+        "listUnknownPackages": false
+      }
+    }
+  }
 }

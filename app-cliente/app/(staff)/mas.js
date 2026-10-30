@@ -36,6 +36,11 @@ export default function Mas() {
         <Text style={estilos.flecha}>›</Text>
       </Pressable>
 
+      <Pressable style={estilos.opcion} onPress={() => router.push("/staff-impresora")}>
+        <Text style={estilos.textoOpcion}>Impresora de etiquetas</Text>
+        <Text style={estilos.flecha}>›</Text>
+      </Pressable>
+
       {esAdmin ? (
         <Pressable style={estilos.opcion} onPress={() => Linking.openURL(`${PANEL_URL}/#/cuentas`)}>
           <Text style={estilos.textoOpcion}>Cuentas (abre el panel)</Text>
