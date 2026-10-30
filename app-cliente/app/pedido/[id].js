@@ -6,6 +6,8 @@ import { useTema } from "../../lib/contextoTema";
 import { mostrarToast } from "../../lib/toast";
 import PedidoProgreso, { PASOS_PEDIDO } from "../../components/PedidoProgreso";
 
+const ESTADOS_FINALES = ["entregado", "cancelado", "no_recogido"];
+
 export default function DetallePedido() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
@@ -38,17 +40,18 @@ export default function DetallePedido() {
     }, [cargar])
   );
 
-  // Justo al volver de Mercado Pago el webhook todavía puede no haber
-  // llegado — sin esto, la pantalla se queda pegada en "esperando pago"
-  // hasta que el cliente sale y vuelve a entrar. Mientras haya algún
-  // pedido pendiente_pago visible, revisa cada 3s (silencioso, sin
-  // spinner) hasta que se resuelva.
-  const hayPendientePago = (pedidos || []).some((p) => p.estado === "pendiente_pago");
+  // Sin esto, esta pantalla solo se refrescaba al entrar (useFocusEffect)
+  // — si el staff avanzaba el pedido (preparando/listo/entregado) o
+  // confirmaba un pago mientras el cliente seguía viendo esta pantalla sin
+  // cambiar de pestaña, se quedaba pegada hasta salir y volver a entrar.
+  // Revisa cada 5s en silencio mientras algún pedido siga activo, y para
+  // sola en cuanto todos quedan en un estado final.
+  const hayActivo = (pedidos || []).some((p) => !ESTADOS_FINALES.includes(p.estado));
   useEffect(() => {
-    if (!hayPendientePago) return;
-    const intervalo = setInterval(cargar, 3000);
+    if (!hayActivo) return;
+    const intervalo = setInterval(cargar, 5000);
     return () => clearInterval(intervalo);
-  }, [hayPendientePago, cargar]);
+  }, [hayActivo, cargar]);
 
   if (cargando) {
     return (
@@ -177,7 +180,7 @@ function TarjetaPedido({ pedido, colores, estilos, router, onCambio }) {
 
       {/* La forma de pago se elige en el Carrito y queda fija — aquí solo se
           ofrece reintentar si eligió Mercado Pago y todavía no se confirma. */}
-      {pedido.metodo_pago === "liga_mp" && !pedido.pago_confirmado && porPagar > 0 && !["cancelado", "no_recogido"].includes(pedido.estado) ? (
+      {pedido.metodo_pago === "liga_mp" && !pedido.pago_confirmado && porPagar > 0 && !ESTADOS_FINALES.includes(pedido.estado) ? (
         <Pressable style={estilos.botonPagar} onPress={pagarConMercadoPago} disabled={pagando}>
           {pagando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoPagar}>Pagar en línea con Mercado Pago</Text>}
         </Pressable>
