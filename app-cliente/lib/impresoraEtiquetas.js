@@ -1,23 +1,32 @@
 // Impresión directa por Bluetooth clásico (SPP) a una impresora de
-// etiquetas TSPL — modelo real en uso: OCBP-401DT (viene con código de
-// páginas chino PC936/GB18030 de fábrica, ver CODEPAGE UTF-8 más abajo).
-// Separado por completo
-// de etiquetaPedido.js (que genera el PDF de vista previa/respaldo): acá
-// se arman los comandos TSPL crudos, en texto plano, que se mandan tal
-// cual al puerto serie del dispositivo ya emparejado.
+// etiquetas TSPL — modelo real en uso: 4BARCODE 4B-2054D (vendida con la
+// etiqueta genérica "OCBP-401DT").
 //
-// Posiciones en DOTS (203dpi ≈ 8 dots/mm, etiqueta 40×60mm ≈ 320×480 dots)
-// — son un punto de partida razonable, pero CASI SEGURO van a necesitar
-// ajuste fino una vez que se vea en la impresora real (ver Configurar
-// impresora → Imprimir etiqueta de prueba). El logo no se incluye aquí
-// todavía: TSPL solo imprime imágenes como bitmap monocromo (comando
-// BITMAP), que requiere convertir el logo a 1-bit en el momento — se deja
-// pendiente para cuando ya esté calibrado lo demás.
+// El renderizador de texto nativo (comando TEXT) de este firmware no
+// dibuja glifos legibles con NINGÚN identificador de fuente probado — se
+// confirmó capturando con "Imprimir a archivo" lo que manda el driver
+// oficial de Windows (certificado por Seagull Scientific) para esta
+// misma impresora: NUNCA usa TEXT/QRCODE/BARCODE nativos, dibuja TODO
+// (texto y QR) como imágenes y las manda con el comando BITMAP. Acá se
+// hace lo mismo: el texto se dibuja con una fuente de píxeles propia
+// (5×7, la clásica de Adafruit_GFX, dominio público) y el QR con la
+// matriz de módulos de la librería `qrcode`, todo compuesto en un solo
+// bitmap de 1 bit por píxel y mandado con BITMAP.
+//
+// Secuencia de inicialización tomada tal cual del archivo .prn capturado
+// del driver oficial para una etiqueta de 40×60mm — no inventada:
+//   SIZE 40 mm,60 mm / GAP 3 mm,0 mm / SET RIBBON OFF / DIRECTION 0,0 /
+//   REFERENCE 0,0 / OFFSET 0 mm / SET PEEL OFF / SET CUTTER OFF /
+//   SET TEAR ON / CLS / BITMAP ... / PRINT 1,1
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import RNBluetoothClassic from "react-native-bluetooth-classic";
+import { Buffer } from "buffer";
+import QRCode from "qrcode";
 
 const CLAVE_CONFIG = "impresora_etiquetas_config";
 const MAX_LINEAS_POR_PAGINA = 7;
+const ANCHO_DOTS = 320; // 40mm × 8 dots/mm (203dpi)
+const ALTO_DOTS = 480; // 60mm × 8 dots/mm
 
 export async function obtenerConfigImpresora() {
   try {
@@ -36,10 +45,6 @@ export async function listarDispositivosEmparejados() {
   return RNBluetoothClassic.getBondedDevices();
 }
 
-function tsplEscape(texto) {
-  return String(texto).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
 function nombreCorto(pedido) {
   const primerNombre = (pedido.nombre || "").trim().split(/\s+/)[0] || "";
   return `${primerNombre} ${pedido.apellido_paterno || ""}`.trim();
@@ -53,8 +58,109 @@ function lineasDeItems(items) {
   });
 }
 
-/** Un bloque de comandos TSPL por cada etiqueta física (1/2, 2/2…) —
- *  mismo criterio de paginación que la vista previa en PDF. */
+// ---------------------------------------------------------------------
+// Fuente de píxeles 5×7 (ASCII 0x20–0x7E) — la clásica de Adafruit_GFX,
+// de dominio público. 5 bytes por carácter (una columna por byte, bit 0
+// = fila de arriba). Va en base64 solo para que no ocupe 95 líneas acá.
+// ---------------------------------------------------------------------
+const FUENTE_5X7_B64 =
+  "AAAAAAAAAF8AAAAHAAcAFH8UfxQkKn8qEiMTCGRiNklWIFAACAcDAAAcIkEAAEEiHAAqHH8cKggIPggIAIBwMAAICAgICAAAYGAAIBAIBAI+UUlFPgBCf0AAcklJSUYhQUlNMxgUEn8QJ0VFRTk8SklJMUEhEQkHNklJSTZGSUkpHgAAFAAAAEA0AAAACBQiQRQUFBQUAEEiFAgCAVkJBj5BXVlOfBIREnx/SUlJNj5BQUEif0FBQT5/SUlJQX8JCQkBPkFBUXN/CAgIfwBBf0EAIEBBPwF/CBQiQX9AQEBAfwIcAn9/BAgQfz5BQUE+fwkJCQY+QVEhXn8JGSlGJklJSTIDAX8BAz9AQEA/HyBAIB8/QDhAP2MUCBRjAwR4BANhWUlNQwB/QUFBAgQIECAAQUFBfwQCAQIEQEBAQEAAAwcIACBUVHhAfyhERDg4REREKDhERCh/OFRUVBgACH4JAhikpJx4fwgEBHgARH1AACBAQD0AfxAoRAAAQX9AAHwEeAR4fAgEBHg4REREOPwYJCQYGCQkGPx8CAQECEhUVFQkBAQ/RCQ8QEAgfBwgQCAcPEAwQDxEKBAoREyQkJB8RGRUTEQACDZBAAAAdwAAAEE2CAACAQIEAg==";
+let FUENTE_5X7 = null;
+function obtenerFuente() {
+  if (!FUENTE_5X7) FUENTE_5X7 = Buffer.from(FUENTE_5X7_B64, "base64");
+  return FUENTE_5X7;
+}
+
+/** El texto en los pedidos puede traer acentos/ñ que la fuente 5×7
+ *  (solo ASCII 0x20–0x7E) no tiene — se normaliza quitando diacríticos
+ *  en vez de dejar un hueco/signo de interrogación por cada letra. */
+function normalizarParaFuente(texto) {
+  return String(texto ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/×/g, "x")
+    .replace(/[^\x20-\x7e]/g, "?");
+}
+
+// ---------------------------------------------------------------------
+// Lienzo de 1 bit por píxel — se dibuja todo acá (texto y QR) y al final
+// se empaca en los bytes que espera el comando BITMAP de TSPL.
+// ---------------------------------------------------------------------
+function crearLienzo(ancho, alto) {
+  return { ancho, alto, pixeles: new Uint8Array(ancho * alto) };
+}
+
+function ponerPixel(lienzo, x, y) {
+  if (x < 0 || x >= lienzo.ancho || y < 0 || y >= lienzo.alto) return;
+  lienzo.pixeles[y * lienzo.ancho + x] = 1;
+}
+
+function dibujarGlifo(lienzo, x, y, codigo, escala) {
+  if (codigo < 0x20 || codigo > 0x7e) return;
+  const fuente = obtenerFuente();
+  const offset = (codigo - 0x20) * 5;
+  for (let col = 0; col < 5; col++) {
+    const columna = fuente[offset + col];
+    for (let fila = 0; fila < 7; fila++) {
+      if ((columna >> fila) & 1) {
+        for (let sy = 0; sy < escala; sy++) {
+          for (let sx = 0; sx < escala; sx++) {
+            ponerPixel(lienzo, x + col * escala + sx, y + fila * escala + sy);
+          }
+        }
+      }
+    }
+  }
+}
+
+/** Dibuja texto de izquierda a derecha; recorta si se pasa del ancho
+ *  disponible en vez de desbordarse fuera de la etiqueta. */
+function dibujarTexto(lienzo, x, y, texto, escala, anchoMaximo) {
+  const limpio = normalizarParaFuente(texto);
+  const anchoGlifo = (5 + 1) * escala; // 1 columna de espacio entre letras
+  let cursorX = x;
+  for (const ch of limpio) {
+    if (anchoMaximo != null && cursorX + anchoGlifo > x + anchoMaximo) break;
+    dibujarGlifo(lienzo, cursorX, y, ch.charCodeAt(0), escala);
+    cursorX += anchoGlifo;
+  }
+}
+
+function dibujarQr(lienzo, x, y, contenido, escalaModulo) {
+  const qr = QRCode.create(contenido, { errorCorrectionLevel: "M" });
+  const { size, data } = qr.modules;
+  for (let row = 0; row < size; row++) {
+    for (let col = 0; col < size; col++) {
+      if ((data[row * size + col] & 1) === 1) {
+        for (let sy = 0; sy < escalaModulo; sy++) {
+          for (let sx = 0; sx < escalaModulo; sx++) {
+            ponerPixel(lienzo, x + col * escalaModulo + sx, y + row * escalaModulo + sy);
+          }
+        }
+      }
+    }
+  }
+}
+
+/** Empaca el lienzo a 1 bit por píxel, MSB primero, ancho redondeado al
+ *  byte — el formato crudo que espera BITMAP en TSPL. */
+function empacarBitmap(lienzo) {
+  const anchoBytes = Math.ceil(lienzo.ancho / 8);
+  const datos = Buffer.alloc(anchoBytes * lienzo.alto);
+  for (let y = 0; y < lienzo.alto; y++) {
+    for (let x = 0; x < lienzo.ancho; x++) {
+      if (lienzo.pixeles[y * lienzo.ancho + x]) {
+        const indice = y * anchoBytes + (x >> 3);
+        datos[indice] |= 1 << (7 - (x % 8));
+      }
+    }
+  }
+  return { anchoBytes, datos };
+}
+
+/** Un Buffer TSPL completo (comandos + bitmap binario) por cada etiqueta
+ *  física (1/2, 2/2…) — mismo criterio de paginación que la vista previa
+ *  en PDF. */
 export function construirComandosTspl(pedido) {
   const lineas = lineasDeItems(pedido.items);
   const paginas = [];
@@ -69,36 +175,38 @@ export function construirComandosTspl(pedido) {
   const nombre = nombreCorto(pedido);
 
   return paginas.map((lineasPagina, i) => {
-    const comandos = [
-      "SIZE 40 mm,60 mm",
-      "GAP 2 mm,0 mm",
-      // El QR salía nítido pero el texto se veía como barras negras sólidas
-      // — con el cabezal sin velocidad/densidad fijas corría con el default
-      // de fábrica. Velocidad y densidad tomadas de la etiqueta del
-      // fabricante (OCBP-401DT: speed 5, density 8).
-      "SPEED 5",
-      "DENSITY 8",
-      "DIRECTION 0",
-      // Esta impresora trae de fábrica la página de códigos china PC936
-      // (GB18030) — sin forzar UTF-8, el texto latino puede caer en la
-      // tabla de fuente equivocada y salir como bloques negros en vez de
-      // caracteres legibles (se ve el QR bien porque ese comando no pasa
-      // por la tabla de fuentes de texto).
-      "CODEPAGE UTF-8",
-      "CLS",
-    ];
-    if (i === 0) comandos.push(`QRCODE 108,16,"M",4,"A",0,"${pedido.id}"`);
-    comandos.push(`TEXT 16,180,"3",0,1,1,"${tsplEscape(folio)}"`);
-    comandos.push(`TEXT 16,208,"3",0,1,1,"${tsplEscape(nombre)}"`);
-    if (totalPaginas > 1) comandos.push(`TEXT 260,180,"2",0,1,1,"${i + 1}/${totalPaginas}"`);
+    const lienzo = crearLienzo(ANCHO_DOTS, ALTO_DOTS);
+
+    if (i === 0) dibujarQr(lienzo, 108, 16, pedido.id, 4);
+    dibujarTexto(lienzo, 16, 180, folio, 3, ANCHO_DOTS - 32);
+    dibujarTexto(lienzo, 16, 208, nombre, 3, ANCHO_DOTS - 32);
+    if (totalPaginas > 1) dibujarTexto(lienzo, 260, 180, `${i + 1}/${totalPaginas}`, 2, 60);
     let y = 244;
     for (const linea of lineasPagina) {
-      comandos.push(`TEXT 16,${y},"2",0,1,1,"${tsplEscape(linea)}"`);
+      dibujarTexto(lienzo, 16, y, linea, 2, ANCHO_DOTS - 32);
       y += 22;
     }
-    comandos.push(`TEXT 16,440,"2",0,1,1,"Pickup: ${tsplEscape(horaPickup)}"`);
-    comandos.push("PRINT 1");
-    return comandos.join("\r\n") + "\r\n";
+    dibujarTexto(lienzo, 16, 440, `Pickup: ${horaPickup}`, 2, ANCHO_DOTS - 32);
+
+    const { anchoBytes, datos } = empacarBitmap(lienzo);
+    const encabezado = Buffer.from(
+      [
+        "SIZE 40 mm,60 mm",
+        "GAP 3 mm,0 mm",
+        "SET RIBBON OFF",
+        "DIRECTION 0,0",
+        "REFERENCE 0,0",
+        "OFFSET 0 mm",
+        "SET PEEL OFF",
+        "SET CUTTER OFF",
+        "SET TEAR ON",
+        "CLS",
+        `BITMAP 0,0,${anchoBytes},${lienzo.alto},1,`,
+      ].join("\r\n"),
+      "ascii"
+    );
+    const pie = Buffer.from("\r\nPRINT 1,1\r\n", "ascii");
+    return Buffer.concat([encabezado, datos, pie]);
   });
 }
 
@@ -132,54 +240,4 @@ async function enviarBloques(bloques) {
 
 export async function imprimirEtiquetaDirecto(pedido) {
   await enviarBloques(construirComandosTspl(pedido));
-}
-
-/** SOLO diagnóstico: el texto real sale como bloques negros sólidos sin
- *  que cambie con CODEPAGE ni con SPEED/DENSITY — eso apunta a que el
- *  identificador de fuente ("2"/"3", el numérico estándar de TSC) no
- *  existe en este firmware clon y la impresora rellena la caja completa
- *  en vez de no dibujar nada. Esta etiqueta prueba varios identificadores
- *  de fuente a la vez (numéricos y nombres de fuente residente comunes en
- *  clones chinos) para ver cuál — si alguno — se imprime legible, en una
- *  sola pasada en vez de un build por cada intento. Bórrese cuando ya se
- *  sepa cuál fuente usar de verdad. */
-export function construirComandosDiagnosticoFuentes() {
-  const fuentes = ["1", "2", "3", "4", "TSS24.BF2", "ROMAN.TTF", "SIMPLIFIED.TTF"];
-  const comandos = ["SIZE 40 mm,60 mm", "GAP 2 mm,0 mm", "SPEED 5", "DENSITY 8", "DIRECTION 0", "CODEPAGE UTF-8", "CLS"];
-  let y = 16;
-  for (const fuente of fuentes) {
-    comandos.push(`TEXT 16,${y},"${fuente}",0,1,1,"${fuente}: ABC123"`);
-    y += 40;
-  }
-  comandos.push("PRINT 1");
-  return [comandos.join("\r\n") + "\r\n"];
-}
-
-export async function imprimirDiagnosticoFuentes() {
-  await enviarBloques(construirComandosDiagnosticoFuentes());
-}
-
-/** SOLO diagnóstico: el ancho de cada bloque negro del diagnóstico de
- *  fuentes TSPL creció proporcional al largo del texto de cada línea —
- *  la impresora sí procesa bien el contenido, su renderizador de TEXT
- *  simplemente no dibuja glifos reales con NINGÚN identificador de fuente
- *  probado. Esta impresora dice soportar TSPL y CPCL — son dos lenguajes
- *  de comando completamente distintos con intérpretes separados en el
- *  firmware; es común que un clon tenga uno bien implementado y el otro a
- *  medias. Esta etiqueta prueba el renderizador de texto de CPCL en vez
- *  del de TSPL, con varios tamaños de fuente CPCL (0-7). Bórrese cuando
- *  ya se sepa cuál camino usar de verdad. */
-export function construirComandosDiagnosticoCpcl() {
-  const lineas = ["! 0 200 200 480 1"];
-  let y = 20;
-  for (let fuente = 0; fuente <= 7; fuente++) {
-    lineas.push(`TEXT ${fuente} 0 20 ${y} CPCL fuente ${fuente}`);
-    y += 55;
-  }
-  lineas.push("FORM", "PRINT");
-  return [lineas.join("\r\n") + "\r\n"];
-}
-
-export async function imprimirDiagnosticoCpcl() {
-  await enviarBloques(construirComandosDiagnosticoCpcl());
 }

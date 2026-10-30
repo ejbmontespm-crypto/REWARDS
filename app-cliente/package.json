@@ -6,6 +6,7 @@
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.117.2",
+    "buffer": "^6.0.3",
     "expo": "~57.0.31",
     "expo-camera": "~57.0.6",
     "expo-constants": "~57.0.19",
@@ -41,7 +42,9 @@
   "expo": {
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": ["react-native-bluetooth-classic"],
+        "exclude": [
+          "react-native-bluetooth-classic"
+        ],
         "listUnknownPackages": false
       }
     }

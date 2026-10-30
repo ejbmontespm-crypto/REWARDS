@@ -3,14 +3,7 @@ import { View, Text, Pressable, StyleSheet, ActivityIndicator, Switch, ScrollVie
 import { useFocusEffect } from "expo-router";
 import { useTema } from "../lib/contextoTema";
 import { mostrarToast } from "../lib/toast";
-import {
-  obtenerConfigImpresora,
-  guardarConfigImpresora,
-  listarDispositivosEmparejados,
-  imprimirEtiquetaDirecto,
-  imprimirDiagnosticoFuentes,
-  imprimirDiagnosticoCpcl,
-} from "../lib/impresoraEtiquetas";
+import { obtenerConfigImpresora, guardarConfigImpresora, listarDispositivosEmparejados, imprimirEtiquetaDirecto } from "../lib/impresoraEtiquetas";
 
 // Pedido de prueba — no necesita existir de verdad, solo sirve para
 // confirmar que la impresora conectada imprime texto/QR legibles antes
@@ -79,32 +72,6 @@ export default function ConfigurarImpresora() {
     }
   }
 
-  async function probarDiagnosticoFuentes() {
-    setProbando(true);
-    setError("");
-    try {
-      await imprimirDiagnosticoFuentes();
-      mostrarToast("✓ Etiqueta de diagnóstico (TSPL) enviada");
-    } catch (err) {
-      setError(err.message || "No se pudo imprimir el diagnóstico.");
-    } finally {
-      setProbando(false);
-    }
-  }
-
-  async function probarDiagnosticoCpcl() {
-    setProbando(true);
-    setError("");
-    try {
-      await imprimirDiagnosticoCpcl();
-      mostrarToast("✓ Etiqueta de diagnóstico (CPCL) enviada");
-    } catch (err) {
-      setError(err.message || "No se pudo imprimir el diagnóstico CPCL.");
-    } finally {
-      setProbando(false);
-    }
-  }
-
   if (cargando) {
     return (
       <View style={estilos.centro}>
@@ -155,22 +122,6 @@ export default function ConfigurarImpresora() {
           <Pressable style={estilos.botonProbar} onPress={probarImpresion} disabled={probando}>
             {probando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBoton}>Imprimir etiqueta de prueba</Text>}
           </Pressable>
-
-          <Pressable style={estilos.botonDiagnostico} onPress={probarDiagnosticoFuentes} disabled={probando}>
-            {probando ? (
-              <ActivityIndicator color={colores.acento} />
-            ) : (
-              <Text style={estilos.textoBotonDiagnostico}>Diagnóstico TSPL: probar 7 fuentes a la vez</Text>
-            )}
-          </Pressable>
-
-          <Pressable style={estilos.botonDiagnostico} onPress={probarDiagnosticoCpcl} disabled={probando}>
-            {probando ? (
-              <ActivityIndicator color={colores.acento} />
-            ) : (
-              <Text style={estilos.textoBotonDiagnostico}>Diagnóstico CPCL: probar lenguaje alterno</Text>
-            )}
-          </Pressable>
         </>
       ) : null}
 
@@ -196,8 +147,6 @@ function crearEstilos(colores) {
     filaSwitch: { flexDirection: "row", alignItems: "center", gap: 10 },
     botonProbar: { backgroundColor: colores.acento, borderRadius: 10, paddingVertical: 14, alignItems: "center" },
     textoBoton: { color: "#fff", fontWeight: "700", fontSize: 14 },
-    botonDiagnostico: { borderWidth: 1, borderColor: colores.acento, borderRadius: 10, paddingVertical: 12, alignItems: "center" },
-    textoBotonDiagnostico: { color: colores.acento, fontWeight: "600", fontSize: 13 },
     error: { color: colores.peligro, fontSize: 13 },
   });
 }

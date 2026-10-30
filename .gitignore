@@ -28,3 +28,6 @@ expo-env.d.ts
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Material de referencia local (drivers, manuales, capturas .prn) — pesado y no es código
+/impresora/
