@@ -72,6 +72,14 @@ export function construirComandosTspl(pedido) {
     const comandos = [
       "SIZE 40 mm,60 mm",
       "GAP 2 mm,0 mm",
+      // El QR salía nítido pero el texto se veía como barras negras sólidas
+      // — con el cabezal al tope de calor/velocidad, los trazos finos de
+      // la fuente pequeña se funden entre sí (el QR tolera el exceso de
+      // tinta porque sus módulos ya son bloques grandes). Densidad media y
+      // velocidad lenta le dan tiempo al cabezal de no sobre-quemar cada
+      // trazo.
+      "SPEED 2",
+      "DENSITY 8",
       "DIRECTION 0",
       // Esta impresora trae de fábrica la página de códigos china PC936
       // (GB18030) — sin forzar UTF-8, el texto latino puede caer en la
