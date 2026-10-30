@@ -32,9 +32,13 @@ async function generarYCompartirEtiqueta(pedido, logoUrl) {
  *  en cada pedido mientras nadie configuró una impresora de verdad). */
 async function imprimirAutomaticoSiAplica(pedido) {
   const config = await obtenerConfigImpresora();
-  if (!config.direccion || !config.automatica) return;
+  if (!config.direccion || !config.automatica) {
+    mostrarToast("Etiqueta no impresa: la impresión automática está apagada o no hay impresora configurada (Más → Impresora de etiquetas).");
+    return;
+  }
   try {
     await imprimirEtiquetaDirecto(pedido);
+    mostrarToast("✓ Etiqueta impresa");
   } catch (err) {
     mostrarToast(`No se pudo imprimir la etiqueta: ${err.message || "error desconocido"}`);
   }
