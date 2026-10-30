@@ -31,7 +31,16 @@ function lineasDeItems(items) {
   });
 }
 
-export async function construirHtmlEtiqueta(pedido) {
+/** Solo primer nombre + apellido paterno — ni el nombre completo (puede
+ *  traer varios nombres de pila) ni el apellido materno hacen falta para
+ *  que el cliente reconozca su etiqueta, y es menos dato personal expuesto
+ *  pegado a un vaso que cualquiera puede ver. */
+function nombreCorto(pedido) {
+  const primerNombre = (pedido.nombre || "").trim().split(/\s+/)[0] || "";
+  return `${primerNombre} ${pedido.apellido_paterno || ""}`.trim();
+}
+
+export async function construirHtmlEtiqueta(pedido, { logoUrl } = {}) {
   const qrSvg = await QRCode.toString(pedido.id, { type: "svg", margin: 0 });
   const lineas = lineasDeItems(pedido.items);
   const paginas = [];
@@ -42,13 +51,16 @@ export async function construirHtmlEtiqueta(pedido) {
   const totalPaginas = paginas.length;
 
   const horaPickup = new Date(pedido.hora_pickup).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+  const folio = pedido.folio || pedido.id.slice(0, 8);
 
   const paginasHtml = paginas
     .map(
       (lineasPagina, i) => `
       <div class="pagina">
+        ${i === 0 && logoUrl ? `<img class="logo" src="${logoUrl}" />` : ""}
         ${i === 0 ? `<div class="qr">${qrSvg}</div>` : `<div class="espaciador-qr"></div>`}
-        <div class="nombre">${escapeHtml(pedido.nombre)} ${escapeHtml(pedido.apellido_paterno)}</div>
+        <div class="folio">${escapeHtml(folio)}</div>
+        <div class="nombre">${escapeHtml(nombreCorto(pedido))}</div>
         ${totalPaginas > 1 ? `<div class="pagina-num">${i + 1}/${totalPaginas}</div>` : ""}
         <div class="items">
           ${lineasPagina.map((l) => `<div class="item">${escapeHtml(l)}</div>`).join("")}
@@ -68,11 +80,13 @@ export async function construirHtmlEtiqueta(pedido) {
       body { margin: 0; padding: 0; }
       .pagina {
         width: 36mm; min-height: 56mm; page-break-after: always;
-        display: flex; flex-direction: column; align-items: center; gap: 1.2mm;
+        display: flex; flex-direction: column; align-items: center; gap: 1mm;
       }
-      .qr { width: 18mm; height: 18mm; }
+      .logo { max-width: 14mm; max-height: 8mm; object-fit: contain; }
+      .qr { width: 16mm; height: 16mm; }
       .qr svg { width: 100%; height: 100%; display: block; }
       .espaciador-qr { height: 2mm; }
+      .folio { font-size: 8pt; font-weight: 700; letter-spacing: 0.3pt; }
       .nombre { font-size: 9pt; font-weight: 700; text-align: center; }
       .pagina-num { font-size: 7pt; color: #555; }
       .items { width: 100%; }

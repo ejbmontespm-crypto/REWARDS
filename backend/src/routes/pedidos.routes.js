@@ -6,7 +6,7 @@ import { requireStaffAuth, requireClienteAuth, requireClienteOStaffAuth, require
 import { calcularElegibilidadPedidos } from "../lib/elegibilidad.js";
 import { obtenerConfig } from "../lib/config.js";
 import { exportarXlsx } from "../lib/exportarExcel.js";
-import { inicioDeHoyMexicoUTC } from "../lib/recompensa.js";
+import { inicioDeHoyMexicoUTC, diaLocalMexico } from "../lib/recompensa.js";
 import { promoDentroDeVentana, promoExigePickupInmediato } from "../lib/promoHorario.js";
 import { notificarClientesPorId } from "../lib/notificar.js";
 
@@ -41,10 +41,14 @@ pedidosRouter.get(
       valores.push(estado);
       condiciones.push(`p.estado = $${valores.length}`);
     }
+    if (req.query.folio) {
+      valores.push(`%${req.query.folio}%`);
+      condiciones.push(`p.folio ilike $${valores.length}`);
+    }
     const where = condiciones.length ? `where ${condiciones.join(" and ")}` : "";
 
     const { rows } = await query(
-      `select p.id, p.created_at, p.hora_pickup, p.estado, p.total_mxn, p.creditos_aplicados_mxn,
+      `select p.id, p.folio, p.created_at, p.hora_pickup, p.estado, p.total_mxn, p.creditos_aplicados_mxn,
               c.nombre, c.apellido_paterno
        from pedidos p
        join clientes c on c.id = p.cliente_id
@@ -60,6 +64,7 @@ pedidosRouter.get(
       nombreArchivo: "pedidos.xlsx",
       nombreHoja: "Pedidos",
       columnas: [
+        { header: "Folio", key: "folio", width: 16 },
         { header: "Fecha", key: "fecha", width: 20 },
         { header: "Cliente", key: "cliente", width: 28 },
         { header: "Hora pickup", key: "pickup", width: 20 },
@@ -68,6 +73,7 @@ pedidosRouter.get(
         { header: "Créditos aplicados", key: "creditos", width: 16 },
       ],
       filas: rows.map((p) => ({
+        folio: p.folio || "—",
         fecha: new Date(p.created_at).toLocaleString("es-MX"),
         cliente: `${p.nombre} ${p.apellido_paterno}`,
         pickup: new Date(p.hora_pickup).toLocaleString("es-MX"),
@@ -205,15 +211,29 @@ pedidosRouter.post(
         }
       }
 
+      // Folio — fecha + consecutivo del día ("20261029-007"), para el
+      // sticker/comanda y para poder buscar un pedido por teléfono/en
+      // persona sin andar copiando el UUID. El consecutivo se saca de una
+      // tabla contadora aparte (upsert atómico) para que sea seguro aunque
+      // se creen dos pedidos al mismo tiempo — nunca un simple "cuenta +1".
+      const diaHoy = diaLocalMexico();
+      const { rows: contadorRows } = await client.query(
+        `insert into contador_folios_diario (fecha, ultimo) values ($1, 1)
+         on conflict (fecha) do update set ultimo = contador_folios_diario.ultimo + 1
+         returning ultimo`,
+        [diaHoy]
+      );
+      const folio = `${diaHoy.replace(/-/g, "")}-${String(contadorRows[0].ultimo).padStart(3, "0")}`;
+
       // Un pedido por liga de pago no entra a cocina hasta que el webhook de
       // Mercado Pago confirme el pago — "pendiente_pago" lo deja fuera de
       // ESTADOS_ACTIVOS (invisible en la Cola del staff) mientras tanto, para
       // no preparar algo que a lo mejor nunca se pagó.
       const estadoInicial = metodo_pago === "liga_mp" ? "pendiente_pago" : "recibido";
       const { rows: pedidoRows } = await client.query(
-        `insert into pedidos (cliente_id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn, monedero_aplicado_mxn, metodo_pago)
-         values ($1, $2, $3, $4, $5, $6, $7) returning *`,
-        [cliente_id, estadoInicial, hora_pickup, totalMxn, creditosAplicados, monederoAplicado, metodo_pago || "caja"]
+        `insert into pedidos (cliente_id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn, monedero_aplicado_mxn, metodo_pago, folio)
+         values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
+        [cliente_id, estadoInicial, hora_pickup, totalMxn, creditosAplicados, monederoAplicado, metodo_pago || "caja", folio]
       );
       const pedido = pedidoRows[0];
 
@@ -328,7 +348,7 @@ pedidosRouter.get(
     if (soloHoy) valores.push(inicioDeHoyMexicoUTC());
 
     const { rows } = await query(
-      `select p.id, p.cliente_id, p.estado, p.hora_pickup, p.total_mxn, p.creditos_aplicados_mxn, p.created_at,
+      `select p.id, p.folio, p.cliente_id, p.estado, p.hora_pickup, p.total_mxn, p.creditos_aplicados_mxn, p.created_at,
               c.nombre, c.apellido_paterno,
               (p.hora_pickup < now() - ($2::text || ' minutes')::interval) as vencido,
               (select json_agg(json_build_object('cantidad', pi.cantidad, 'producto_nombre', pr.nombre))

@@ -18,14 +18,14 @@ const ETIQUETA_AVANZAR = { recibido: "Empezar a preparar", preparando: "Marcar l
  *  staff puede guardarlo, verlo o mandarlo a cualquier impresora que ya
  *  tenga emparejada. Cuando exista el driver real de la Xprinter, esta
  *  misma función es la que cambia por el envío directo por Bluetooth. */
-async function generarYCompartirEtiqueta(pedido) {
-  const html = await construirHtmlEtiqueta(pedido);
+async function generarYCompartirEtiqueta(pedido, logoUrl) {
+  const html = await construirHtmlEtiqueta(pedido, { logoUrl });
   const { uri } = await Print.printToFileAsync({ html, width: 113, height: 170 }); // ~40x60mm en puntos, respaldo si el motor ignora @page
   if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
 }
 
 export default function ColaPedidos() {
-  const { colores } = useTema();
+  const { colores, logoUrl } = useTema();
   const estilos = useMemo(() => crearEstilos(colores), [colores]);
   const [tab, setTab] = useState("activos"); // "activos" | "entregados" | "pendiente_pago"
   const [pedidos, setPedidos] = useState([]);
@@ -93,7 +93,7 @@ export default function ColaPedidos() {
       // de apretar nada aparte. Si falla (ej. sin apps para compartir
       // disponibles), no bloquea el flujo — el pedido ya avanzó bien.
       if (nuevoEstado === "preparando") {
-        generarYCompartirEtiqueta(pedido).catch(() => {});
+        generarYCompartirEtiqueta(pedido, logoUrl).catch(() => {});
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo avanzar el pedido.");
@@ -201,7 +201,9 @@ export default function ColaPedidos() {
               ) : null}
               <Text style={estilos.total}>Total: ${Number(p.total_mxn).toFixed(0)}</Text>
 
-              {tab === "activos" && ["preparando", "listo"].includes(p.estado) ? <EtiquetaPedido pedido={p} estilos={estilos} colores={colores} /> : null}
+              {tab === "activos" && ["preparando", "listo"].includes(p.estado) ? (
+                <EtiquetaPedido pedido={p} estilos={estilos} colores={colores} logoUrl={logoUrl} />
+              ) : null}
 
               {tab === "pendiente_pago" ? (
                 <View style={estilos.filaBotones}>
@@ -300,7 +302,7 @@ export default function ColaPedidos() {
   );
 }
 
-function EtiquetaPedido({ pedido, estilos, colores }) {
+function EtiquetaPedido({ pedido, estilos, colores, logoUrl }) {
   const [generando, setGenerando] = useState(false);
   const [error, setError] = useState("");
 
@@ -308,7 +310,7 @@ function EtiquetaPedido({ pedido, estilos, colores }) {
     setGenerando(true);
     setError("");
     try {
-      await generarYCompartirEtiqueta(pedido);
+      await generarYCompartirEtiqueta(pedido, logoUrl);
     } catch {
       setError("No se pudo generar el PDF de prueba.");
     } finally {

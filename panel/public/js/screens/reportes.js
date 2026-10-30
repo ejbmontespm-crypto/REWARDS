@@ -139,6 +139,7 @@ const REPORTES = [
     clave: "pedidos",
     archivo: "pedidos.xlsx",
     filtros: [
+      { nombre: "folio", tipo: "text", label: "Folio", placeholder: "20261029-007" },
       { nombre: "fecha_desde", tipo: "date", label: "Desde" },
       { nombre: "fecha_hasta", tipo: "date", label: "Hasta" },
       {
@@ -157,6 +158,7 @@ const REPORTES = [
       },
     ],
     columnas: [
+      { header: "Folio", get: (p) => p.folio || "—" },
       { header: "Fecha", get: (p) => formatoFechaHora(p.created_at) },
       { header: "Cliente", get: (p) => `${p.nombre} ${p.apellido_paterno}` },
       { header: "Pickup", get: (p) => formatoFechaHora(p.hora_pickup) },
@@ -206,12 +208,16 @@ async function cargarYPintarTabla(content) {
   filaFiltros.innerHTML = `
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
       ${reporte.filtros
-        .map((f) =>
-          f.tipo === "select"
-            ? `<div class="form-row" style="margin:0;"><label class="form-label">${escapar(f.label)}</label>
-                <select class="form-select" id="filtro-${f.nombre}" style="width:auto;">${f.opciones.map(([v, t]) => `<option value="${v}">${escapar(t)}</option>`).join("")}</select></div>`
-            : `<div class="form-row" style="margin:0;"><label class="form-label">${escapar(f.label)}</label><input class="form-input" type="date" id="filtro-${f.nombre}" /></div>`
-        )
+        .map((f) => {
+          if (f.tipo === "select") {
+            return `<div class="form-row" style="margin:0;"><label class="form-label">${escapar(f.label)}</label>
+                <select class="form-select" id="filtro-${f.nombre}" style="width:auto;">${f.opciones.map(([v, t]) => `<option value="${v}">${escapar(t)}</option>`).join("")}</select></div>`;
+          }
+          if (f.tipo === "text") {
+            return `<div class="form-row" style="margin:0;"><label class="form-label">${escapar(f.label)}</label><input class="form-input" type="text" id="filtro-${f.nombre}" placeholder="${escapar(f.placeholder || "")}" /></div>`;
+          }
+          return `<div class="form-row" style="margin:0;"><label class="form-label">${escapar(f.label)}</label><input class="form-input" type="date" id="filtro-${f.nombre}" /></div>`;
+        })
         .join("")}
       <button class="btn btn-secondary btn-sm" id="btn-filtrar">Filtrar</button>
     </div>

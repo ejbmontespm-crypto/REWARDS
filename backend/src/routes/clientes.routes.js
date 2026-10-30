@@ -103,7 +103,7 @@ clientesRouter.get(
     // impide pedir otra vez antes de que le entreguen el primero) — se
     // regresan todos, no solo el más reciente (fase A, ronda 5).
     const { rows: pedidos } = await query(
-      `select p.id, p.estado, p.hora_pickup, p.total_mxn, p.metodo_pago, p.pago_confirmado, p.created_at,
+      `select p.id, p.folio, p.estado, p.hora_pickup, p.total_mxn, p.metodo_pago, p.pago_confirmado, p.created_at,
               coalesce((select sum(cantidad) from pedido_items where pedido_id = p.id), 0) as cantidad_productos,
               (select json_agg(json_build_object('cantidad', pi.cantidad, 'producto_nombre', pr.nombre))
                  from pedido_items pi join productos pr on pr.id = pi.producto_id
