@@ -12,6 +12,7 @@ import * as cuentas from "./screens/cuentas.js";
 import * as reportes from "./screens/reportes.js";
 import * as apariencia from "./screens/apariencia.js";
 import * as bitacora from "./screens/bitacora.js";
+import * as pedidosPrueba from "./screens/pedidosPrueba.js";
 
 const RUTAS_PUBLICAS = new Set(["login", "recuperar"]);
 
@@ -41,6 +42,7 @@ async function despachar() {
   if (ruta === "reportes") return reportes.render();
   if (ruta === "apariencia") return apariencia.render();
   if (ruta === "bitacora") return bitacora.render();
+  if (ruta === "pedidos-prueba") return pedidosPrueba.render();
 
   window.location.hash = "#/dashboard";
 }

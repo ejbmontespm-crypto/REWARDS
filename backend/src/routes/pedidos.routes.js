@@ -322,6 +322,82 @@ pedidosRouter.post(
 );
 
 // ---------------------------------------------------------------------
+// POST /pedidos/admin-crear — PROVISIONAL (quitar cuando ya no se
+// necesite para pruebas): crea un pedido directo desde el panel, sin
+// pasar por elegibilidad/horario/monedero/créditos — sirve para probar
+// el flujo de cocina/impresión sin tener que loguearse como cliente y
+// como staff por separado.
+// ---------------------------------------------------------------------
+pedidosRouter.post(
+  "/admin-crear",
+  requireStaffAuth,
+  requireRole("admin"),
+  asyncHandler(async (req, res) => {
+    const { cliente_id, items, hora_pickup } = req.body || {};
+    if (!cliente_id) throw badRequest("Falta cliente_id");
+    if (!Array.isArray(items) || items.length === 0) throw badRequest("El pedido no puede venir vacío");
+
+    const { rows: clienteRows } = await query(`select id from clientes where id = $1`, [cliente_id]);
+    if (!clienteRows[0]) throw notFound("Cliente no encontrado");
+
+    const horaPickupFinal =
+      hora_pickup && !Number.isNaN(Date.parse(hora_pickup)) ? hora_pickup : new Date(Date.now() + 15 * 60_000).toISOString();
+
+    let totalMxn = 0;
+    const itemsResueltos = [];
+    for (const item of items) {
+      if (!item.producto_id || !item.cantidad || item.cantidad < 1) {
+        throw badRequest("Cada item necesita producto_id y cantidad >= 1");
+      }
+      const { rows: prodRows } = await query(`select id, nombre, precio from productos where id = $1`, [item.producto_id]);
+      const producto = prodRows[0];
+      if (!producto) throw notFound(`Producto ${item.producto_id} no encontrado`);
+      totalMxn += Number(producto.precio) * item.cantidad;
+      itemsResueltos.push({ producto_id: producto.id, cantidad: item.cantidad, precio_unitario: Number(producto.precio) });
+    }
+    totalMxn = Math.round(totalMxn * 100) / 100;
+
+    const client = await getClient();
+    try {
+      await client.query("begin");
+
+      const diaHoy = diaLocalMexico();
+      const { rows: contadorRows } = await client.query(
+        `insert into contador_folios_diario (fecha, ultimo) values ($1, 1)
+         on conflict (fecha) do update set ultimo = contador_folios_diario.ultimo + 1
+         returning ultimo`,
+        [diaHoy]
+      );
+      const folio = `${diaHoy.replace(/-/g, "")}-${String(contadorRows[0].ultimo).padStart(3, "0")}`;
+
+      const { rows: pedidoRows } = await client.query(
+        `insert into pedidos (cliente_id, estado, hora_pickup, total_mxn, creditos_aplicados_mxn, monedero_aplicado_mxn, metodo_pago, folio)
+         values ($1, 'recibido', $2, $3, 0, 0, 'caja', $4) returning *`,
+        [cliente_id, horaPickupFinal, totalMxn, folio]
+      );
+      const pedido = pedidoRows[0];
+
+      for (const item of itemsResueltos) {
+        await client.query(`insert into pedido_items (pedido_id, producto_id, cantidad, precio_unitario) values ($1, $2, $3, $4)`, [
+          pedido.id,
+          item.producto_id,
+          item.cantidad,
+          item.precio_unitario,
+        ]);
+      }
+
+      await client.query("commit");
+      res.status(201).json({ pedido });
+    } catch (err) {
+      await client.query("rollback");
+      throw err;
+    } finally {
+      client.release();
+    }
+  })
+);
+
+// ---------------------------------------------------------------------
 // GET /pedidos/mios  — historial propio del cliente (fase3 §10)
 // ---------------------------------------------------------------------
 pedidosRouter.get(
