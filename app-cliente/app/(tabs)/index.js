@@ -83,7 +83,6 @@ export default function Inicio() {
   const [cargando, setCargando] = useState(true);
   const [refrescando, setRefrescando] = useState(false);
   const [error, setError] = useState("");
-  const [redimiendo, setRedimiendo] = useState(false);
   const [notificacionesNoLeidas, setNotificacionesNoLeidas] = useState(0);
   const escalaCelebracion = useRef(new Animated.Value(1)).current;
   const recompensaListaAnterior = useRef(false);
@@ -144,18 +143,6 @@ export default function Inicio() {
     }
     recompensaListaAnterior.current = Boolean(datos?.recompensa_lista);
   }, [datos?.recompensa_lista, escalaCelebracion]);
-
-  async function redimir() {
-    setRedimiendo(true);
-    try {
-      await api.post("/solicitudes-canje", {});
-      await cargar(true);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo generar la redención.");
-    } finally {
-      setRedimiendo(false);
-    }
-  }
 
   if (cargando) {
     return (
@@ -219,10 +206,9 @@ export default function Inicio() {
           <Text style={estilos.bannerTexto}>🎉 ¡Tienes una recompensa lista para redimir!</Text>
           <Pressable
             style={({ pressed }) => [estilos.botonRedimir, pressed && estilos.botonPresionado]}
-            onPress={redimir}
-            disabled={redimiendo}
+            onPress={() => router.push("/carrito")}
           >
-            {redimiendo ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBotonRedimir}>Redimir</Text>}
+            <Text style={estilos.textoBotonRedimir}>Redimir</Text>
           </Pressable>
         </Animated.View>
       ) : null}

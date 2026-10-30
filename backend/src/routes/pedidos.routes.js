@@ -237,6 +237,13 @@ pedidosRouter.post(
       );
       const pedido = pedidoRows[0];
 
+      if (monederoAplicado > 0) {
+        await client.query(
+          `insert into movimientos_monedero (cliente_id, monto, tipo, detalle, pedido_id) values ($1, $2, 'uso_pedido', $3, $4)`,
+          [cliente_id, -monederoAplicado, `Aplicado al pedido ${folio}`, pedido.id]
+        );
+      }
+
       for (const item of itemsResueltos) {
         const { rows: itemRows } = await client.query(
           `insert into pedido_items (pedido_id, producto_id, cantidad, precio_unitario) values ($1, $2, $3, $4) returning id`,
@@ -501,15 +508,33 @@ pedidosRouter.post(
         throw conflict('Ya no se puede cancelar — el staff ya empezó a prepararlo. Pásate a caja.');
       }
 
-      // Si ya estaba pagado en línea, el dinero real que Mercado Pago cobró
-      // (todo menos la porción de créditos de recompensa, que es otro
-      // sistema aparte) regresa como saldo a favor — no hay reembolso real
-      // a la tarjeta, solo saldo usable en la próxima compra.
+      // El saldo a favor que ya traía aplicado este pedido nunca se "gastó"
+      // de verdad (el pedido nunca se entregó) — se descongela siempre,
+      // sin importar la forma de pago. Si además ya estaba pagado en línea,
+      // lo que Mercado Pago cobró de más (todo menos créditos de recompensa
+      // Y menos el saldo ya descongelado arriba, para no contarlo dos
+      // veces) también regresa como saldo — no hay reembolso real a la
+      // tarjeta, solo saldo usable en la próxima compra.
       let saldoGenerado = 0;
+      const monederoDelPedido = Number(pedido.monedero_aplicado_mxn || 0);
+      if (monederoDelPedido > 0) {
+        await query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [pedido.cliente_id, monederoDelPedido]);
+        await query(
+          `insert into movimientos_monedero (cliente_id, monto, tipo, detalle, pedido_id) values ($1, $2, 'devolucion_cancelacion', $3, $4)`,
+          [pedido.cliente_id, monederoDelPedido, `Saldo descongelado — pedido ${pedido.folio || pedido.id.slice(0, 8)} cancelado`, pedido.id]
+        );
+        saldoGenerado += monederoDelPedido;
+      }
       if (pedido.pago_confirmado) {
-        saldoGenerado = Math.round((Number(pedido.total_mxn) - Number(pedido.creditos_aplicados_mxn || 0)) * 100) / 100;
-        if (saldoGenerado > 0) {
-          await query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [pedido.cliente_id, saldoGenerado]);
+        const reembolsoMp =
+          Math.round((Number(pedido.total_mxn) - Number(pedido.creditos_aplicados_mxn || 0) - monederoDelPedido) * 100) / 100;
+        if (reembolsoMp > 0) {
+          await query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [pedido.cliente_id, reembolsoMp]);
+          await query(
+            `insert into movimientos_monedero (cliente_id, monto, tipo, detalle, pedido_id) values ($1, $2, 'devolucion_cancelacion', $3, $4)`,
+            [pedido.cliente_id, reembolsoMp, `Reembolso — pedido ${pedido.folio || pedido.id.slice(0, 8)} pagado en línea y cancelado`, pedido.id]
+          );
+          saldoGenerado += reembolsoMp;
         }
       }
 
@@ -576,11 +601,24 @@ pedidosRouter.post(
       }
     }
 
+    // El saldo a favor congelado en este pedido nunca se entregó — se
+    // descongela igual que en una cancelación del cliente, sin importar si
+    // además hubo penalización a los créditos/visitas de recompensa (son
+    // dos bolsas distintas; la penalización no toca el monedero).
+    const monederoDelPedido = Number(pedido.monedero_aplicado_mxn || 0);
+    if (monederoDelPedido > 0) {
+      await query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [pedido.cliente_id, monederoDelPedido]);
+      await query(
+        `insert into movimientos_monedero (cliente_id, monto, tipo, detalle, pedido_id) values ($1, $2, 'devolucion_cancelacion', $3, $4)`,
+        [pedido.cliente_id, monederoDelPedido, `Saldo descongelado — pedido ${pedido.folio || pedido.id.slice(0, 8)} (${nuevoEstado})`, pedido.id]
+      );
+    }
+
     const { rows: updRows } = await query(
       `update pedidos set estado = $2, motivo_cancelacion = coalesce($3, motivo_cancelacion), updated_at = now() where id = $1 returning *`,
       [req.params.id, nuevoEstado, motivo?.trim() || null]
     );
 
-    res.json({ pedido: updRows[0], penalizacion: canjeCreado });
+    res.json({ pedido: updRows[0], penalizacion: canjeCreado, saldo_generado_mxn: monederoDelPedido || undefined });
   })
 );

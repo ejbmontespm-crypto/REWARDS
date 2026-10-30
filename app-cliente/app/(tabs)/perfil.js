@@ -7,6 +7,12 @@ import { useSession } from "../../lib/contextoSesion";
 import { useTema } from "../../lib/contextoTema";
 
 const ETIQUETA_PERFIL = { alumno: "Alumno", docente: "Docente", otro: "Otro" };
+const ETIQUETA_TIPO_MONEDERO = {
+  uso_pedido: "Usado en un pedido",
+  devolucion_cancelacion: "Devolución",
+  recompensa: "Recompensa canjeada",
+  promo: "Promoción",
+};
 
 export default function Perfil() {
   const { cerrarSesion } = useSession();
@@ -16,6 +22,8 @@ export default function Perfil() {
   const [temaActualizado, setTemaActualizado] = useState(false);
   const [cliente, setCliente] = useState(null);
   const [movimientos, setMovimientos] = useState([]);
+  const [saldoMonedero, setSaldoMonedero] = useState(0);
+  const [movimientosMonedero, setMovimientosMonedero] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [editando, setEditando] = useState(false);
   const [form, setForm] = useState({ nombre: "", apellido_paterno: "", apellido_materno: "", telefono: "", correo: "", fecha_nacimiento: "" });
@@ -26,8 +34,8 @@ export default function Perfil() {
   useFocusEffect(
     useCallback(() => {
       let vivo = true;
-      Promise.all([api.get("/clientes/me"), api.get("/movimientos/mios")])
-        .then(([me, mov]) => {
+      Promise.all([api.get("/clientes/me"), api.get("/movimientos/mios"), api.get("/clientes/me/monedero")])
+        .then(([me, mov, monedero]) => {
           if (!vivo) return;
           setCliente(me.cliente);
           setForm({
@@ -39,6 +47,8 @@ export default function Perfil() {
             fecha_nacimiento: me.cliente.fecha_nacimiento || "",
           });
           setMovimientos(mov.movimientos);
+          setSaldoMonedero(monedero.saldo_mxn);
+          setMovimientosMonedero(monedero.movimientos);
         })
         .catch((err) => vivo && setError(err instanceof ApiError ? err.message : "No se pudo cargar tu perfil."))
         .finally(() => vivo && setCargando(false));
@@ -155,6 +165,29 @@ export default function Perfil() {
       </View>
 
       <View style={estilos.tarjeta}>
+        <View style={estilos.filaTitulo}>
+          <Text style={estilos.tituloTarjeta}>Saldo a favor</Text>
+          <Text style={estilos.saldoMonederoMonto}>${Number(saldoMonedero).toFixed(0)}</Text>
+        </View>
+        {movimientosMonedero.length ? (
+          movimientosMonedero.map((m) => (
+            <View key={m.id} style={estilos.filaMovimiento}>
+              <View style={{ flex: 1 }}>
+                <Text style={estilos.detalleMonedero}>{m.detalle || ETIQUETA_TIPO_MONEDERO[m.tipo] || m.tipo}</Text>
+                <Text style={estilos.movimientoFecha}>{new Date(m.created_at).toLocaleDateString("es-MX")}</Text>
+              </View>
+              <Text style={[estilos.montoMonedero, Number(m.monto) < 0 && estilos.montoMonederoNegativo]}>
+                {Number(m.monto) >= 0 ? "+" : ""}
+                {Number(m.monto).toFixed(0)}
+              </Text>
+            </View>
+          ))
+        ) : (
+          <Text style={estilos.vacio}>Sin movimientos todavía.</Text>
+        )}
+      </View>
+
+      <View style={estilos.tarjeta}>
         <Text style={estilos.tituloTarjeta}>Historial de compras</Text>
         {movimientos.length ? (
           movimientos.map((m) => (
@@ -234,6 +267,10 @@ function crearEstilos(colores) {
     movimientoItems: { fontSize: 11.5, color: colores.texto, marginTop: 2 },
     movimientoMonto: { fontSize: 13, color: colores.texto, fontWeight: "600" },
     vacio: { fontSize: 12.5, color: colores.textoMuted },
+    saldoMonederoMonto: { fontSize: 17, fontWeight: "700", color: colores.acento },
+    detalleMonedero: { fontSize: 13, color: colores.texto, fontWeight: "500" },
+    montoMonedero: { fontSize: 13.5, fontWeight: "700", color: colores.exito },
+    montoMonederoNegativo: { color: colores.textoMuted },
     botonActualizarTema: { paddingVertical: 10, alignItems: "center" },
     textoActualizarTema: { color: colores.acento, fontWeight: "600", fontSize: 13 },
     botonCerrarSesion: { borderWidth: 1, borderColor: colores.peligro, borderRadius: 10, paddingVertical: 13, alignItems: "center" },

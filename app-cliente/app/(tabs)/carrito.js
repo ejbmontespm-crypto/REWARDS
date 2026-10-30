@@ -7,6 +7,7 @@ import { useCarrito } from "../../lib/contextoCarrito";
 import { useTema } from "../../lib/contextoTema";
 import { radios, sombra } from "../../constants/theme";
 import { ETIQUETA_PASO_PEDIDO } from "../../components/PedidoProgreso";
+import { mostrarToast } from "../../lib/toast";
 
 const COLOR_ESTADO = {
   pendiente_pago: { fondo: "#fff7e6", texto: "#8a6d1f" },
@@ -45,8 +46,8 @@ export default function Carrito() {
   const [saldo, setSaldo] = useState(null);
   const [promosVentana, setPromosVentana] = useState({});
   const [slotElegido, setSlotElegido] = useState(null);
-  const [aplicarCreditos, setAplicarCreditos] = useState(false);
   const [aplicarMonedero, setAplicarMonedero] = useState(false);
+  const [redimiendo, setRedimiendo] = useState(false);
   const [productoCanjeado, setProductoCanjeado] = useState(null);
   const [metodoPago, setMetodoPago] = useState("caja"); // "caja" | "mercadopago"
   const [enviando, setEnviando] = useState(false);
@@ -90,16 +91,33 @@ export default function Carrito() {
     setSlotElegido(null);
   }, [slots]);
 
-  const puedeAplicarCreditos = config?.modalidad === "credito_valor_mxn" && Number(saldo?.creditos_disponibles) > 0;
-  const saldoDisponibleMxn = puedeAplicarCreditos ? Number(saldo.creditos_disponibles) * Number(config.valor_cd_mxn) : 0;
-  const creditosAplicadosMxn = aplicarCreditos ? Math.min(saldoDisponibleMxn, total) : 0;
+  // Recompensa en créditos con valor en pesos: ya no se "aplica" directo al
+  // total — primero se canjea a saldo a favor (explícito, con su propio
+  // botón), y de ahí se gasta igual que cualquier otro saldo (devolución,
+  // promo, etc.) con el toggle de abajo. Misma bolsa para todo.
+  const puedeRedimirCreditos = config?.modalidad === "credito_valor_mxn" && Number(saldo?.creditos_disponibles) > 0;
+  const pesosDeCreditos = puedeRedimirCreditos ? Number(saldo.creditos_disponibles) * Number(config.valor_cd_mxn) : 0;
 
-  // Saldo a favor (monedero) — independiente de la modalidad de recompensa,
-  // viene de pedidos pagados en línea que luego se cancelaron.
+  // Saldo a favor (monedero) — una sola bolsa para devoluciones, recompensas
+  // canjeadas y promos del admin.
   const puedeAplicarMonedero = Number(saldo?.saldo_monedero_mxn) > 0;
-  const monederoAplicadoMxn = aplicarMonedero
-    ? Math.min(Number(saldo?.saldo_monedero_mxn || 0), Math.max(0, total - creditosAplicadosMxn))
-    : 0;
+  const monederoAplicadoMxn = aplicarMonedero ? Math.min(Number(saldo?.saldo_monedero_mxn || 0), total) : 0;
+
+  async function redimirRecompensa() {
+    setRedimiendo(true);
+    setError("");
+    try {
+      const { saldo_agregado_mxn } = await api.post("/clientes/me/redimir-recompensa", {});
+      const me = await api.get("/clientes/me");
+      setSaldo(me.saldo);
+      setAplicarMonedero(true);
+      mostrarToast(`✓ $${Number(saldo_agregado_mxn).toFixed(0)} agregados a tu saldo a favor`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "No se pudo canjear la recompensa.");
+    } finally {
+      setRedimiendo(false);
+    }
+  }
 
   // Canje de producto gratis en línea (modalidades credito_umbral/visitas) —
   // se revalida en el backend al confirmar, esto es solo para mostrar la
@@ -110,7 +128,7 @@ export default function Carrito() {
   const productosElegibles = puedeCanjearProducto ? config.productos_elegibles || [] : [];
   const productoElegidoInfo = productosElegibles.find((p) => p.id === productoCanjeado);
 
-  const porPagarEnCaja = Math.max(0, total - creditosAplicadosMxn - monederoAplicadoMxn);
+  const porPagarEnCaja = Math.max(0, total - monederoAplicadoMxn);
 
   async function confirmar() {
     setError("");
@@ -121,7 +139,6 @@ export default function Carrito() {
       const { pedido } = await api.post("/pedidos", {
         items: items.map((i) => ({ producto_id: i.producto_id, cantidad: i.cantidad, extra_ids: i.extras.map((e) => e.id) })),
         hora_pickup: slotElegido.toISOString(),
-        creditos_aplicados_mxn: creditosAplicadosMxn || undefined,
         monedero_aplicado_mxn: monederoAplicadoMxn || undefined,
         metodo_pago: metodoPago === "mercadopago" ? "liga_mp" : "caja",
         canjear_producto_id: productoCanjeado || undefined,
@@ -233,6 +250,16 @@ export default function Carrito() {
         ))
       )}
 
+      {puedeRedimirCreditos ? (
+        <Pressable style={estilos.bannerRecompensa} onPress={redimirRecompensa} disabled={redimiendo}>
+          {redimiendo ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={estilos.textoBannerRecompensa}>🎉 Tienes ${pesosDeCreditos.toFixed(0)} en recompensa — Redimir a tu saldo</Text>
+          )}
+        </Pressable>
+      ) : null}
+
       {items.length > 0 ? (
         <>
           <View style={estilos.separador} />
@@ -255,14 +282,6 @@ export default function Carrito() {
               );
             })}
           </ScrollView>
-
-          {puedeAplicarCreditos ? (
-            <Pressable style={estilos.filaCreditos} onPress={() => setAplicarCreditos((v) => !v)}>
-              <Text style={estilos.itemNombre}>
-                {aplicarCreditos ? "☑" : "☐"} Aplicar créditos (tienes ${saldoDisponibleMxn.toFixed(0)} disponibles)
-              </Text>
-            </Pressable>
-          ) : null}
 
           {puedeAplicarMonedero ? (
             <Pressable style={estilos.filaCreditos} onPress={() => setAplicarMonedero((v) => !v)}>
@@ -314,7 +333,6 @@ export default function Carrito() {
 
           <View style={estilos.resumen}>
             <FilaResumen estilos={estilos} etiqueta="Total" valor={total} />
-            {creditosAplicadosMxn > 0 ? <FilaResumen estilos={estilos} etiqueta="Cubierto con créditos" valor={-creditosAplicadosMxn} /> : null}
             {monederoAplicadoMxn > 0 ? <FilaResumen estilos={estilos} etiqueta="Cubierto con tu saldo" valor={-monederoAplicadoMxn} /> : null}
             {productoElegidoInfo ? <Text style={estilos.notaVentana}>🎁 {productoElegidoInfo.nombre} — gratis con tu recompensa</Text> : null}
             <FilaResumen
@@ -393,6 +411,8 @@ function crearEstilos(colores) {
     textoChip: { fontSize: 13, color: colores.texto },
     textoChipActivo: { color: "#fff", fontWeight: "600" },
     filaCreditos: { paddingVertical: 6 },
+    bannerRecompensa: { backgroundColor: colores.acento, borderRadius: radios.medio, padding: 14, alignItems: "center", ...sombra.suave },
+    textoBannerRecompensa: { color: "#fff", fontWeight: "700", fontSize: 13.5, textAlign: "center" },
     resumen: { backgroundColor: colores.superficie, borderWidth: 1, borderColor: colores.borde, borderRadius: 10, padding: 14, gap: 6 },
     filaResumenItem: { flexDirection: "row", justifyContent: "space-between" },
     resumenEtiqueta: { fontSize: 13, color: colores.textoMuted },

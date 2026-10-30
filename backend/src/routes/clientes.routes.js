@@ -201,6 +201,64 @@ clientesRouter.get(
   })
 );
 
+// ---------------------------------------------------------------------
+// GET /clientes/me/monedero — desglose del saldo a favor: de dónde salió
+// cada movimiento (devolución de cancelación, recompensa canjeada, promo
+// del admin, o aplicado a un pedido) — no solo el número final.
+// ---------------------------------------------------------------------
+clientesRouter.get(
+  "/me/monedero",
+  requireClienteAuth,
+  asyncHandler(async (req, res) => {
+    const { rows: clienteRows } = await query(`select saldo_monedero_mxn from clientes where id = $1`, [req.cliente.id]);
+    if (!clienteRows[0]) throw notFound("Cliente no encontrado");
+    const { rows: movimientos } = await query(
+      `select id, monto, tipo, detalle, pedido_id, created_at from movimientos_monedero
+       where cliente_id = $1 order by created_at desc limit 100`,
+      [req.cliente.id]
+    );
+    res.json({ saldo_mxn: Number(clienteRows[0].saldo_monedero_mxn || 0), movimientos });
+  })
+);
+
+// ---------------------------------------------------------------------
+// POST /clientes/me/redimir-recompensa — SOLO modalidad credito_valor_mxn:
+// convierte todos los créditos disponibles en saldo a favor de una vez
+// (reemplaza el viejo "aplicar créditos" automático del carrito — ahora
+// es una acción explícita de canje, igual que elegir el producto gratis
+// en las otras modalidades, nada más que esto cae en la misma bolsa que
+// las devoluciones en vez de ser un sistema aparte).
+// ---------------------------------------------------------------------
+clientesRouter.post(
+  "/me/redimir-recompensa",
+  requireClienteAuth,
+  asyncHandler(async (req, res) => {
+    const { rows: configRows } = await query(`select * from configuracion_recompensa where vigente_hasta is null`);
+    const config = configRows[0];
+    if (!config || config.modalidad !== "credito_valor_mxn") {
+      throw badRequest("La modalidad de recompensa activa no se canjea así — elige el producto gratis en el Carrito");
+    }
+
+    const { rows: saldoRows } = await query(`select creditos_disponibles from saldos_cliente_v where cliente_id = $1`, [req.cliente.id]);
+    const creditos = Number(saldoRows[0]?.creditos_disponibles || 0);
+    if (creditos <= 0) throw badRequest("No tienes créditos disponibles para canjear");
+
+    const pesos = Math.round(creditos * Number(config.valor_cd_mxn) * 100) / 100;
+
+    await query(
+      `insert into canjes (cliente_id, tipo, cantidad_descontada, configuracion_recompensa_id, canal) values ($1, $2, $3, $4, 'en_linea')`,
+      [req.cliente.id, "credito_valor_mxn", creditos, config.id]
+    );
+    await query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [req.cliente.id, pesos]);
+    await query(
+      `insert into movimientos_monedero (cliente_id, monto, tipo, detalle) values ($1, $2, 'recompensa', 'Recompensa canjeada')`,
+      [req.cliente.id, pesos]
+    );
+
+    res.json({ saldo_agregado_mxn: pesos });
+  })
+);
+
 // A partir de aquí, todo es operación de staff/admin (todavía no hay login de cliente conectado).
 clientesRouter.use(requireStaffAuth);
 
