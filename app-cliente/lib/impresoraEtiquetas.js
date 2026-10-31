@@ -65,3 +65,11 @@ async function enviarBloques(bloques) {
 export async function imprimirEtiquetaDirecto(pedido) {
   await enviarBloques(construirComandosTspl(pedido));
 }
+
+/** Mismo transporte Bluetooth, para el camino experimental que captura
+ *  una imagen real en vez de dibujar con la fuente de píxeles propia
+ *  (ver lib/capturaEtiqueta.js) — ahí ya se arma el Buffer TSPL completo,
+ *  aquí solo se manda. */
+export async function enviarComandoTspl(bloque) {
+  await enviarBloques([bloque]);
+}

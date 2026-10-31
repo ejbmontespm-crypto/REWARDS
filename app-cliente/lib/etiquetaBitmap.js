@@ -328,28 +328,35 @@ export function construirLienzosEtiqueta(pedido) {
   });
 }
 
+/** Envuelve un bitmap ya empacado (anchoBytes/alto/datos) en los comandos
+ *  TSPL completos — compartido por el camino de fuente de píxeles propia
+ *  y por el de capturar una imagen real (ver lib/capturaEtiqueta.js). */
+export function envolverBitmapEnTspl(anchoBytes, alto, datos) {
+  const encabezado = Buffer.from(
+    [
+      "SIZE 40 mm,60 mm",
+      "GAP 3 mm,0 mm",
+      "SET RIBBON OFF",
+      "DIRECTION 0,0",
+      "REFERENCE 0,0",
+      "OFFSET 0 mm",
+      "SET PEEL OFF",
+      "SET CUTTER OFF",
+      "SET TEAR ON",
+      "CLS",
+      `BITMAP 0,0,${anchoBytes},${alto},1,`,
+    ].join("\r\n"),
+    "ascii"
+  );
+  const pie = Buffer.from("\r\nPRINT 1,1\r\n", "ascii");
+  return Buffer.concat([encabezado, datos, pie]);
+}
+
 /** Un Buffer TSPL completo (comandos + bitmap binario) por cada etiqueta
  *  física — lo que de verdad se manda a imprimir. */
 export function construirComandosTspl(pedido) {
   return construirLienzosEtiqueta(pedido).map((lienzo) => {
     const { anchoBytes, datos } = empacarBitmap(lienzo);
-    const encabezado = Buffer.from(
-      [
-        "SIZE 40 mm,60 mm",
-        "GAP 3 mm,0 mm",
-        "SET RIBBON OFF",
-        "DIRECTION 0,0",
-        "REFERENCE 0,0",
-        "OFFSET 0 mm",
-        "SET PEEL OFF",
-        "SET CUTTER OFF",
-        "SET TEAR ON",
-        "CLS",
-        `BITMAP 0,0,${anchoBytes},${lienzo.alto},1,`,
-      ].join("\r\n"),
-      "ascii"
-    );
-    const pie = Buffer.from("\r\nPRINT 1,1\r\n", "ascii");
-    return Buffer.concat([encabezado, datos, pie]);
+    return envolverBitmapEnTspl(anchoBytes, lienzo.alto, datos);
   });
 }
