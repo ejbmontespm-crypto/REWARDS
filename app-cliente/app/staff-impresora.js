@@ -4,6 +4,7 @@ import { useFocusEffect } from "expo-router";
 import { useTema } from "../lib/contextoTema";
 import { mostrarToast } from "../lib/toast";
 import { obtenerConfigImpresora, guardarConfigImpresora, listarDispositivosEmparejados, imprimirEtiquetaDirecto } from "../lib/impresoraEtiquetas";
+import ModalVistaPreviaEtiqueta from "../components/ModalVistaPreviaEtiqueta";
 
 // Pedido de prueba — no necesita existir de verdad, solo sirve para
 // confirmar que la impresora conectada imprime texto/QR legibles antes
@@ -27,6 +28,7 @@ export default function ConfigurarImpresora() {
   const [dispositivos, setDispositivos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [probando, setProbando] = useState(false);
+  const [previaVisible, setPreviaVisible] = useState(false);
   const [error, setError] = useState("");
 
   useFocusEffect(
@@ -59,12 +61,13 @@ export default function ConfigurarImpresora() {
     await guardarConfigImpresora(nuevaConfig);
   }
 
-  async function probarImpresion() {
+  async function confirmarImpresion() {
     setProbando(true);
     setError("");
     try {
       await imprimirEtiquetaDirecto(PEDIDO_PRUEBA);
       mostrarToast("✓ Etiqueta de prueba enviada");
+      setPreviaVisible(false);
     } catch (err) {
       setError(err.message || "No se pudo imprimir la etiqueta de prueba.");
     } finally {
@@ -119,13 +122,22 @@ export default function ConfigurarImpresora() {
             </View>
           </View>
 
-          <Pressable style={estilos.botonProbar} onPress={probarImpresion} disabled={probando}>
-            {probando ? <ActivityIndicator color="#fff" /> : <Text style={estilos.textoBoton}>Imprimir etiqueta de prueba</Text>}
+          <Pressable style={estilos.botonProbar} onPress={() => setPreviaVisible(true)}>
+            <Text style={estilos.textoBoton}>Imprimir etiqueta de prueba</Text>
           </Pressable>
         </>
       ) : null}
 
       {error ? <Text style={estilos.error}>{error}</Text> : null}
+
+      <ModalVistaPreviaEtiqueta
+        visible={previaVisible}
+        pedido={PEDIDO_PRUEBA}
+        colores={colores}
+        imprimiendo={probando}
+        onConfirmar={confirmarImpresion}
+        onCancelar={() => setPreviaVisible(false)}
+      />
     </ScrollView>
   );
 }

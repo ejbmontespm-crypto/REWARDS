@@ -1,9 +1,10 @@
-// Dibujo puro del bitmap de la etiqueta — logo, texto (fuente de píxeles
-// 8×8, dominio público — derivada de la fuente VGA original de IBM) y QR
-// (matriz de módulos de `qrcode`), compuestos en un lienzo de 1 bit por
-// píxel. Sin dependencias nativas a propósito: así se puede previsualizar
-// en web/Node antes de gastar un build, y lo único que cambia al imprimir
-// de verdad es quién manda los bytes (ver impresoraEtiquetas.js).
+// Dibujo puro del bitmap de la etiqueta — logo, texto (dos fuentes de
+// píxeles de dominio público: 8×8 para folio/nombre, 5×7 a escala 2 para
+// productos/hora — ver más abajo) y QR (matriz de módulos de `qrcode`),
+// compuestos en un lienzo de 1 bit por píxel. Sin dependencias nativas a
+// propósito: así se puede previsualizar en web/Node antes de gastar un
+// build, y lo único que cambia al imprimir de verdad es quién manda los
+// bytes (ver impresoraEtiquetas.js).
 import { Buffer } from "buffer";
 import QRCode from "qrcode";
 
@@ -12,7 +13,7 @@ export const ALTO_DOTS = 480; // 60mm × 8 dots/mm
 
 const MARGEN_X = 16;
 const ANCHO_UTIL = ANCHO_DOTS - MARGEN_X * 2;
-const ESCALA_ITEM = 1;
+const ESCALA_ITEM = 2;
 
 /** Nombres de producto largos ("Croissant de jamón y queso") no caben en
  *  una sola línea a esta escala — sin esto se recortaban en silencio y
@@ -56,21 +57,39 @@ export function lineasDeItems(items) {
 }
 
 // ---------------------------------------------------------------------
-// Fuente de píxeles 8×8 (ASCII 0x20–0x7E) — derivada de la fuente VGA
-// original de IBM (dominio público, vía font8x8 de Daniel Hepper), más
-// redondeada y legible que una 5×7. 8 bytes por carácter (una columna
-// por byte, bit 0 = fila de arriba). Va en base64 para no ocupar 95
-// líneas acá.
+// Dos fuentes de píxeles, ambas de dominio público, embebidas en base64:
+// - FUENTE_GRANDE (8×8, derivada de la VGA original de IBM vía font8x8
+//   de Daniel Hepper) para folio/nombre — se quiere que se lean rápido.
+// - FUENTE_CHICA (5×7, la clásica de Adafruit_GFX) para la lista de
+//   productos y la hora — a escala 2 queda en un tamaño intermedio real
+//   (ni tan grande como la 8×8, ni tan chica como la 8×8 a escala 1, que
+//   resultó ilegible en la impresora de verdad).
+// Cada fuente: N bytes por carácter (ASCII 0x20–0x7E), una columna por
+// byte, bit 0 = fila de arriba.
 // ---------------------------------------------------------------------
-const FUENTE_COLS = 8;
-const FUENTE_FILAS = 8;
-const FUENTE_B64 =
-  "AAAAAAAAAAAAAAZfXwYAAAADAwADAwAAFH9/FH9/FAAkLmtrOhIAAEZmMBgMZmIAMHpPXTd6SAAEBwMAAAAAAAAcPmNBAAAAAEFjPhwAAAAIKj4cHD4qCAgIPj4ICAAAAIDgYAAAAAAICAgICAgAAAAAYGAAAAAAYDAYDAYDAQA+f3FZTX8+AEBCf39AQAAAYnNZSW9mAAAiY0lJfzYAABgcFlN/f1AAJ2dFRX05AAA8fktJeTAAAAMDcXkPBwAANn9JSX82AAAGT0lpPx4AAAAAZmYAAAAAAIDmZgAAAAAIHDZjQQAAACQkJCQkJAAAAEFjNhwIAAACA1FZDwYAAD5/QV1dHx4AfH4TE358AABBf39JSX82ABw+Y0FBYyIAQX9/QWM+HABBf39JXUFjAEF/f0kdAQMAHD5jQVFzcgB/fwgIf38AAABBf39BAAAAMHBAQX8/AQBBf38IHHdjAEF/f0FAYHAAf38OHA5/fwB/fwYMGH9/ABw+Y0FjPhwAQX9/SQkPBgAePyFxf14AAEF/fwkZf2YAJm9NWXMyAAADQX9/QQMAAH9/QEB/fwAAHz9gYD8fAAB/fzAYMH9/AENnPBg8Z0MAB094eE8HAABHY3FZTWdzAAB/f0FBAAAAAQMGDBgwYAAAQUF/fwAAAAgMBgMGDAgAgICAgICAgIAAAAMHBAAAACB0VFQ8eEAAQX8/SEh4MAA4fEREbCgAADB4SEk/f0AAOHxUVFwYAABIfn9JAwIAAJi8pKT4fAQAQX9/CAR8eAAARH19QAAAAGDggID9fQAAQX9/EDhsRAAAQX9/QAAAAHx8GDgcfHgAfHwEBHx4AAA4fEREfDgAAIT8+KQkPBgAGDwkpPj8hABEfHhMBBwYAEhcVFR0JAAAAAQ+f0QkAAA8fEBAPHxAABw8YGA8HAAAPHxwOHB8PABEbDgQOGxEAJy8oKD8fAAATGR0XExkAAAICD53QUEAAAAAAHd3AAAAQUF3PggIAAACAwEDAgMBAA==";
-let FUENTE = null;
-function obtenerFuente() {
-  if (!FUENTE) FUENTE = Buffer.from(FUENTE_B64, "base64");
-  return FUENTE;
+function crearDescriptorFuente(base64, cols, filas) {
+  let datos = null;
+  return {
+    cols,
+    filas,
+    obtener() {
+      if (!datos) datos = Buffer.from(base64, "base64");
+      return datos;
+    },
+  };
 }
+
+const FUENTE_GRANDE = crearDescriptorFuente(
+  "AAAAAAAAAAAAAAZfXwYAAAADAwADAwAAFH9/FH9/FAAkLmtrOhIAAEZmMBgMZmIAMHpPXTd6SAAEBwMAAAAAAAAcPmNBAAAAAEFjPhwAAAAIKj4cHD4qCAgIPj4ICAAAAIDgYAAAAAAICAgICAgAAAAAYGAAAAAAYDAYDAYDAQA+f3FZTX8+AEBCf39AQAAAYnNZSW9mAAAiY0lJfzYAABgcFlN/f1AAJ2dFRX05AAA8fktJeTAAAAMDcXkPBwAANn9JSX82AAAGT0lpPx4AAAAAZmYAAAAAAIDmZgAAAAAIHDZjQQAAACQkJCQkJAAAAEFjNhwIAAACA1FZDwYAAD5/QV1dHx4AfH4TE358AABBf39JSX82ABw+Y0FBYyIAQX9/QWM+HABBf39JXUFjAEF/f0kdAQMAHD5jQVFzcgB/fwgIf38AAABBf39BAAAAMHBAQX8/AQBBf38IHHdjAEF/f0FAYHAAf38OHA5/fwB/fwYMGH9/ABw+Y0FjPhwAQX9/SQkPBgAePyFxf14AAEF/fwkZf2YAJm9NWXMyAAADQX9/QQMAAH9/QEB/fwAAHz9gYD8fAAB/fzAYMH9/AENnPBg8Z0MAB094eE8HAABHY3FZTWdzAAB/f0FBAAAAAQMGDBgwYAAAQUF/fwAAAAgMBgMGDAgAgICAgICAgIAAAAMHBAAAACB0VFQ8eEAAQX8/SEh4MAA4fEREbCgAADB4SEk/f0AAOHxUVFwYAABIfn9JAwIAAJi8pKT4fAQAQX9/CAR8eAAARH19QAAAAGDggID9fQAAQX9/EDhsRAAAQX9/QAAAAHx8GDgcfHgAfHwEBHx4AAA4fEREfDgAAIT8+KQkPBgAGDwkpPj8hABEfHhMBBwYAEhcVFR0JAAAAAQ+f0QkAAA8fEBAPHxAABw8YGA8HAAAPHxwOHB8PABEbDgQOGxEAJy8oKD8fAAATGR0XExkAAAICD53QUEAAAAAAHd3AAAAQUF3PggIAAACAwEDAgMBAA==",
+  8,
+  8
+);
+
+const FUENTE_CHICA = crearDescriptorFuente(
+  "AAAAAAAAAF8AAAAHAAcAFH8UfxQkKn8qEiMTCGRiNklWIFAACAcDAAAcIkEAAEEiHAAqHH8cKggIPggIAIBwMAAICAgICAAAYGAAIBAIBAI+UUlFPgBCf0AAcklJSUYhQUlNMxgUEn8QJ0VFRTk8SklJMUEhEQkHNklJSTZGSUkpHgAAFAAAAEA0AAAACBQiQRQUFBQUAEEiFAgCAVkJBj5BXVlOfBIREnx/SUlJNj5BQUEif0FBQT5/SUlJQX8JCQkBPkFBUXN/CAgIfwBBf0EAIEBBPwF/CBQiQX9AQEBAfwIcAn9/BAgQfz5BQUE+fwkJCQY+QVEhXn8JGSlGJklJSTIDAX8BAz9AQEA/HyBAIB8/QDhAP2MUCBRjAwR4BANhWUlNQwB/QUFBAgQIECAAQUFBfwQCAQIEQEBAQEAAAwcIACBUVHhAfyhERDg4REREKDhERCh/OFRUVBgACH4JAhikpJx4fwgEBHgARH1AACBAQD0AfxAoRAAAQX9AAHwEeAR4fAgEBHg4REREOPwYJCQYGCQkGPx8CAQECEhUVFQkBAQ/RCQ8QEAgfBwgQCAcPEAwQDxEKBAoREyQkJB8RGRUTEQACDZBAAAAdwAAAEE2CAACAQIEAg==",
+  5,
+  7
+);
 
 // ---------------------------------------------------------------------
 // Logo "D·éclair" — convertido una sola vez (fuera de la app, ver
@@ -115,13 +134,13 @@ function ponerPixel(lienzo, x, y) {
   lienzo.pixeles[y * lienzo.ancho + x] = 1;
 }
 
-function dibujarGlifo(lienzo, x, y, codigo, escala) {
+function dibujarGlifo(lienzo, x, y, codigo, escala, fuente) {
   if (codigo < 0x20 || codigo > 0x7e) return;
-  const fuente = obtenerFuente();
-  const offset = (codigo - 0x20) * FUENTE_COLS;
-  for (let col = 0; col < FUENTE_COLS; col++) {
-    const columna = fuente[offset + col];
-    for (let fila = 0; fila < FUENTE_FILAS; fila++) {
+  const datos = fuente.obtener();
+  const offset = (codigo - 0x20) * fuente.cols;
+  for (let col = 0; col < fuente.cols; col++) {
+    const columna = datos[offset + col];
+    for (let fila = 0; fila < fuente.filas; fila++) {
       if ((columna >> fila) & 1) {
         for (let sy = 0; sy < escala; sy++) {
           for (let sx = 0; sx < escala; sx++) {
@@ -133,28 +152,28 @@ function dibujarGlifo(lienzo, x, y, codigo, escala) {
   }
 }
 
-function anchoTexto(texto, escala) {
-  return normalizarParaFuente(texto).length * (FUENTE_COLS + 1) * escala;
+function anchoTexto(texto, escala, fuente) {
+  return normalizarParaFuente(texto).length * (fuente.cols + 1) * escala;
 }
 
 /** Dibuja texto de izquierda a derecha; recorta si se pasa del ancho
  *  disponible en vez de desbordarse fuera de la etiqueta. */
-export function dibujarTexto(lienzo, x, y, texto, escala, anchoMaximo) {
+export function dibujarTexto(lienzo, x, y, texto, escala, anchoMaximo, fuente = FUENTE_GRANDE) {
   const limpio = normalizarParaFuente(texto);
-  const anchoGlifo = (FUENTE_COLS + 1) * escala; // 1 columna de espacio entre letras
+  const anchoGlifo = (fuente.cols + 1) * escala; // 1 columna de espacio entre letras
   let cursorX = x;
   for (const ch of limpio) {
     if (anchoMaximo != null && cursorX + anchoGlifo > x + anchoMaximo) break;
-    dibujarGlifo(lienzo, cursorX, y, ch.charCodeAt(0), escala);
+    dibujarGlifo(lienzo, cursorX, y, ch.charCodeAt(0), escala, fuente);
     cursorX += anchoGlifo;
   }
 }
 
 /** Mismo dibujo, pero centrado horizontalmente dentro de [x, x+ancho]. */
-function dibujarTextoCentrado(lienzo, x, anchoDisponible, y, texto, escala) {
-  const ancho = Math.min(anchoTexto(texto, escala), anchoDisponible);
+function dibujarTextoCentrado(lienzo, x, anchoDisponible, y, texto, escala, fuente = FUENTE_GRANDE) {
+  const ancho = Math.min(anchoTexto(texto, escala, fuente), anchoDisponible);
   const inicio = x + Math.max(0, (anchoDisponible - ancho) / 2);
-  dibujarTexto(lienzo, Math.round(inicio), y, texto, escala, anchoDisponible);
+  dibujarTexto(lienzo, Math.round(inicio), y, texto, escala, anchoDisponible, fuente);
 }
 
 export function dibujarQr(lienzo, x, y, contenido, escalaModulo) {
@@ -198,7 +217,7 @@ function dibujarTextoCentradoConAjuste(lienzo, x, anchoDisponible, y, texto, esc
   let cursorY = y;
   for (const linea of lineas) {
     dibujarTextoCentrado(lienzo, x, anchoDisponible, cursorY, linea, escala);
-    cursorY += (FUENTE_FILAS + 1) * escala + 2;
+    cursorY += (FUENTE_GRANDE.filas + 1) * escala + 2;
   }
   return cursorY;
 }
@@ -222,17 +241,17 @@ export function empacarBitmap(lienzo) {
   return { anchoBytes, datos };
 }
 
-const MAX_CARACTERES_ITEM = Math.floor(ANCHO_UTIL / ((FUENTE_COLS + 1) * ESCALA_ITEM));
-const ALTO_LINEA_ITEM = (FUENTE_FILAS + 1) * ESCALA_ITEM + 5; // productos y hora de recolección
+const MAX_CARACTERES_ITEM = Math.floor(ANCHO_UTIL / ((FUENTE_CHICA.cols + 1) * ESCALA_ITEM));
+const ALTO_LINEA_ITEM = (FUENTE_CHICA.filas + 1) * ESCALA_ITEM + 5; // productos y hora de recolección
 const ESCALA_CENTRADO = 2; // folio/nombre
-const MAX_CARACTERES_CENTRADO = Math.floor(ANCHO_UTIL / ((FUENTE_COLS + 1) * ESCALA_CENTRADO));
+const MAX_CARACTERES_CENTRADO = Math.floor(ANCHO_UTIL / ((FUENTE_GRANDE.cols + 1) * ESCALA_CENTRADO));
 
 /** Arma el/los lienzo(s) de un pedido (uno por etiqueta física, 1/2, 2/2…
  *  si hay muchos productos) — la misma composición que se manda a
  *  imprimir, pero sin empacar ni mandar nada, para poder previsualizarla.
  *  Mismo orden que el diseño original en PDF: logo, QR, folio, nombre,
  *  productos, hora de recolección — todo centrado salvo la lista. */
-const ALTO_LINEA_CENTRADA = (FUENTE_FILAS + 1) * ESCALA_CENTRADO + 2; // folio/nombre
+const ALTO_LINEA_CENTRADA = (FUENTE_GRANDE.filas + 1) * ESCALA_CENTRADO + 2; // folio/nombre
 
 export function construirLienzosEtiqueta(pedido) {
   const horaPickup = new Date(pedido.hora_pickup).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
@@ -285,7 +304,7 @@ export function construirLienzosEtiqueta(pedido) {
     // Esquina superior izquierda — el logo ocupa casi todo el ancho (solo
     // deja ~50dots de margen a cada lado), así que el indicador de página
     // va chico y pegado a la esquina para no encimarse con él.
-    if (totalPaginas > 1) dibujarTexto(lienzo, 8, 4, `${i + 1}/${totalPaginas}`, 1, 44);
+    if (totalPaginas > 1) dibujarTexto(lienzo, 8, 4, `${i + 1}/${totalPaginas}`, 1, 44, FUENTE_CHICA);
 
     y = dibujarTextoCentradoConAjuste(lienzo, MARGEN_X, ANCHO_UTIL, y, folio, ESCALA_CENTRADO, MAX_CARACTERES_CENTRADO);
     y += 4;
@@ -293,16 +312,16 @@ export function construirLienzosEtiqueta(pedido) {
     y += 8;
 
     for (const linea of lineasPagina) {
-      dibujarTexto(lienzo, MARGEN_X, y, linea, ESCALA_ITEM, ANCHO_UTIL);
+      dibujarTexto(lienzo, MARGEN_X, y, linea, ESCALA_ITEM, ANCHO_UTIL, FUENTE_CHICA);
       y += ALTO_LINEA_ITEM;
     }
 
-    // Misma fuente ancha que el resto — si no cabe en una línea, se
-    // envuelve igual que los productos en vez de recortarse en silencio
-    // (ya pasó una vez con el "p.m." cortado).
+    // Misma fuente que la lista — si no cabe en una línea, se envuelve
+    // igual que los productos en vez de recortarse en silencio (ya pasó
+    // una vez con el "p.m." cortado).
     let yPickup = ALTO_DOTS - 8 - lineasPickup.length * ALTO_LINEA_ITEM;
     for (const linea of lineasPickup) {
-      dibujarTexto(lienzo, MARGEN_X, yPickup, linea, ESCALA_ITEM, ANCHO_UTIL);
+      dibujarTexto(lienzo, MARGEN_X, yPickup, linea, ESCALA_ITEM, ANCHO_UTIL, FUENTE_CHICA);
       yPickup += ALTO_LINEA_ITEM;
     }
     return lienzo;

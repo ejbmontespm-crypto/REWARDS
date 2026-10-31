@@ -10,6 +10,7 @@ import { useTema } from "../../lib/contextoTema";
 import { construirHtmlEtiqueta } from "../../lib/etiquetaPedido";
 import { obtenerConfigImpresora, imprimirEtiquetaDirecto } from "../../lib/impresoraEtiquetas";
 import { mostrarToast } from "../../lib/toast";
+import ModalVistaPreviaEtiqueta from "../../components/ModalVistaPreviaEtiqueta";
 
 const SIGUIENTE_ESTADO = { recibido: "preparando", preparando: "listo" };
 const ETIQUETA_ESTADO = { pendiente_pago: "Esperando pago", recibido: "Recibido", preparando: "Preparando", listo: "Listo", entregado: "Entregado" };
@@ -324,14 +325,16 @@ export default function ColaPedidos() {
 
 function EtiquetaPedido({ pedido, estilos, colores, logoUrl }) {
   const [procesando, setProcesando] = useState(false);
+  const [previaVisible, setPreviaVisible] = useState(false);
   const [error, setError] = useState("");
 
-  async function imprimirAhora() {
+  async function confirmarImpresion() {
     setProcesando(true);
     setError("");
     try {
       await imprimirEtiquetaDirecto(pedido);
       mostrarToast("✓ Etiqueta impresa");
+      setPreviaVisible(false);
     } catch (err) {
       setError(err.message || "No se pudo imprimir la etiqueta.");
     } finally {
@@ -353,7 +356,7 @@ function EtiquetaPedido({ pedido, estilos, colores, logoUrl }) {
 
   function tocarQr() {
     Alert.alert("Etiqueta del pedido", "¿Qué quieres hacer?", [
-      { text: "Imprimir ahora", onPress: imprimirAhora },
+      { text: "Ver antes de imprimir", onPress: () => setPreviaVisible(true) },
       { text: "Descargar PDF", onPress: descargarPdf },
       { text: "Cancelar", style: "cancel" },
     ]);
@@ -370,6 +373,14 @@ function EtiquetaPedido({ pedido, estilos, colores, logoUrl }) {
         </Text>
         {error ? <Text style={[estilos.error, { fontSize: 11 }]}>{error}</Text> : null}
       </View>
+      <ModalVistaPreviaEtiqueta
+        visible={previaVisible}
+        pedido={pedido}
+        colores={colores}
+        imprimiendo={procesando}
+        onConfirmar={confirmarImpresion}
+        onCancelar={() => setPreviaVisible(false)}
+      />
     </View>
   );
 }
