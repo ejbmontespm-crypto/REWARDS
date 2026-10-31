@@ -12,7 +12,7 @@ export const ALTO_DOTS = 480; // 60mm × 8 dots/mm
 
 const MARGEN_X = 16;
 const ANCHO_UTIL = ANCHO_DOTS - MARGEN_X * 2;
-const ESCALA_ITEM = 2;
+const ESCALA_ITEM = 1;
 
 /** Nombres de producto largos ("Croissant de jamón y queso") no caben en
  *  una sola línea a esta escala — sin esto se recortaban en silencio y
@@ -223,13 +223,16 @@ export function empacarBitmap(lienzo) {
 }
 
 const MAX_CARACTERES_ITEM = Math.floor(ANCHO_UTIL / ((FUENTE_COLS + 1) * ESCALA_ITEM));
+const ALTO_LINEA_ITEM = (FUENTE_FILAS + 1) * ESCALA_ITEM + 5; // productos y hora de recolección
+const ESCALA_CENTRADO = 2; // folio/nombre
+const MAX_CARACTERES_CENTRADO = Math.floor(ANCHO_UTIL / ((FUENTE_COLS + 1) * ESCALA_CENTRADO));
 
 /** Arma el/los lienzo(s) de un pedido (uno por etiqueta física, 1/2, 2/2…
  *  si hay muchos productos) — la misma composición que se manda a
  *  imprimir, pero sin empacar ni mandar nada, para poder previsualizarla.
  *  Mismo orden que el diseño original en PDF: logo, QR, folio, nombre,
  *  productos, hora de recolección — todo centrado salvo la lista. */
-const ALTO_LINEA_CENTRADA = (FUENTE_FILAS + 1) * 2 + 2; // folio/nombre, a escala 2
+const ALTO_LINEA_CENTRADA = (FUENTE_FILAS + 1) * ESCALA_CENTRADO + 2; // folio/nombre
 
 export function construirLienzosEtiqueta(pedido) {
   const horaPickup = new Date(pedido.hora_pickup).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
@@ -241,16 +244,16 @@ export function construirLienzosEtiqueta(pedido) {
   // varía según eso, así que la paginación de productos se calcula contra
   // el espacio que DE VERDAD queda, no contra un número fijo de líneas
   // (si no, con un nombre largo los productos se encimaban con "Pickup").
-  const lineasFolio = envolverTexto(folio, MAX_CARACTERES_ITEM).length;
-  const lineasNombre = envolverTexto(nombre, MAX_CARACTERES_ITEM).length;
+  const lineasFolio = envolverTexto(folio, MAX_CARACTERES_CENTRADO).length;
+  const lineasNombre = envolverTexto(nombre, MAX_CARACTERES_CENTRADO).length;
   const lineasPickup = envolverTexto(`Pickup: ${horaPickup}`, MAX_CARACTERES_ITEM);
   const altoEncabezadoTexto = lineasFolio * ALTO_LINEA_CENTRADA + 4 + lineasNombre * ALTO_LINEA_CENTRADA + 8;
-  const altoPickup = lineasPickup.length * 22 + 8;
+  const altoPickup = lineasPickup.length * ALTO_LINEA_ITEM + 8;
 
   const altoEncabezadoPrimera = 8 + LOGO_ALTO + 10 + 116 + 14 + altoEncabezadoTexto; // 116 ≈ tamaño típico del QR
   const altoEncabezadoOtras = 8 + 24 + altoEncabezadoTexto;
-  const maxLineasPrimera = Math.max(1, Math.floor((ALTO_DOTS - altoEncabezadoPrimera - altoPickup) / 22));
-  const maxLineasOtras = Math.max(1, Math.floor((ALTO_DOTS - altoEncabezadoOtras - altoPickup) / 22));
+  const maxLineasPrimera = Math.max(1, Math.floor((ALTO_DOTS - altoEncabezadoPrimera - altoPickup) / ALTO_LINEA_ITEM));
+  const maxLineasOtras = Math.max(1, Math.floor((ALTO_DOTS - altoEncabezadoOtras - altoPickup) / ALTO_LINEA_ITEM));
 
   const lineas = lineasDeItems(pedido.items).flatMap((linea) => envolverTexto(linea, MAX_CARACTERES_ITEM));
   const paginas = [];
@@ -284,23 +287,23 @@ export function construirLienzosEtiqueta(pedido) {
     // va chico y pegado a la esquina para no encimarse con él.
     if (totalPaginas > 1) dibujarTexto(lienzo, 8, 4, `${i + 1}/${totalPaginas}`, 1, 44);
 
-    y = dibujarTextoCentradoConAjuste(lienzo, MARGEN_X, ANCHO_UTIL, y, folio, 2, MAX_CARACTERES_ITEM);
+    y = dibujarTextoCentradoConAjuste(lienzo, MARGEN_X, ANCHO_UTIL, y, folio, ESCALA_CENTRADO, MAX_CARACTERES_CENTRADO);
     y += 4;
-    y = dibujarTextoCentradoConAjuste(lienzo, MARGEN_X, ANCHO_UTIL, y, nombre, 2, MAX_CARACTERES_ITEM);
+    y = dibujarTextoCentradoConAjuste(lienzo, MARGEN_X, ANCHO_UTIL, y, nombre, ESCALA_CENTRADO, MAX_CARACTERES_CENTRADO);
     y += 8;
 
     for (const linea of lineasPagina) {
       dibujarTexto(lienzo, MARGEN_X, y, linea, ESCALA_ITEM, ANCHO_UTIL);
-      y += 22;
+      y += ALTO_LINEA_ITEM;
     }
 
     // Misma fuente ancha que el resto — si no cabe en una línea, se
     // envuelve igual que los productos en vez de recortarse en silencio
     // (ya pasó una vez con el "p.m." cortado).
-    let yPickup = ALTO_DOTS - 8 - lineasPickup.length * 22;
+    let yPickup = ALTO_DOTS - 8 - lineasPickup.length * ALTO_LINEA_ITEM;
     for (const linea of lineasPickup) {
       dibujarTexto(lienzo, MARGEN_X, yPickup, linea, ESCALA_ITEM, ANCHO_UTIL);
-      yPickup += 22;
+      yPickup += ALTO_LINEA_ITEM;
     }
     return lienzo;
   });
