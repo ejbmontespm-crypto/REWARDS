@@ -326,8 +326,12 @@ pedidosRouter.post(
 // necesite para pruebas): crea un pedido directo desde el panel, sin
 // pasar por elegibilidad/horario/monedero/créditos — sirve para probar
 // el flujo de cocina/impresión sin tener que loguearse como cliente y
-// como staff por separado.
+// como staff por separado. Desactivado fuera de desarrollo a propósito
+// (auditoría de seguridad, Fase 0): aunque ya requiere admin, no tiene
+// razón de existir en producción, y así no depende de que alguien se
+// acuerde de quitarlo a mano antes de publicar.
 // ---------------------------------------------------------------------
+if (process.env.NODE_ENV !== "production") {
 pedidosRouter.post(
   "/admin-crear",
   requireStaffAuth,
@@ -396,6 +400,7 @@ pedidosRouter.post(
     }
   })
 );
+}
 
 // ---------------------------------------------------------------------
 // GET /pedidos/mios  — historial propio del cliente (fase3 §10)

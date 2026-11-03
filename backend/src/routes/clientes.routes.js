@@ -1,15 +1,18 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
-import { query } from "../config/db.js";
+import jwt from "jsonwebtoken";
+import { query, getClient } from "../config/db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { badRequest, notFound } from "../lib/errors.js";
 import { requireStaffAuth, requireRole, requireClienteAuth, firmarTokenCliente } from "../middleware/auth.js";
-import { registroLimiter } from "../middleware/rateLimit.js";
+import { registroLimiter, forgotPasswordLimiter } from "../middleware/rateLimit.js";
 import { calcularElegibilidadPedidos } from "../lib/elegibilidad.js";
 import { exportarXlsx } from "../lib/exportarExcel.js";
 import { supabaseAdmin } from "../config/supabaseAdmin.js";
 import { generarTokenQr, QR_TTL_SEGUNDOS } from "../lib/qrToken.js";
+import { env } from "../config/env.js";
+import { enviarCorreo } from "../lib/mailer.js";
 
 export const clientesRouter = Router();
 
@@ -239,23 +242,133 @@ clientesRouter.post(
       throw badRequest("La modalidad de recompensa activa no se canjea así — elige el producto gratis en el Carrito");
     }
 
-    const { rows: saldoRows } = await query(`select creditos_disponibles from saldos_cliente_v where cliente_id = $1`, [req.cliente.id]);
-    const creditos = Number(saldoRows[0]?.creditos_disponibles || 0);
-    if (creditos <= 0) throw badRequest("No tienes créditos disponibles para canjear");
+    const client = await getClient();
+    try {
+      await client.query("begin");
 
-    const pesos = Math.round(creditos * Number(config.valor_cd_mxn) * 100) / 100;
+      // Bloquea la fila del cliente ANTES de leer el saldo — sin esto, dos
+      // solicitudes simultáneas (doble tap, o un reintento de red) pueden
+      // leer el mismo saldo positivo antes de que cualquiera de las dos
+      // confirme, y ambas acreditan monedero por el mismo crédito.
+      await client.query(`select id from clientes where id = $1 for update`, [req.cliente.id]);
 
-    await query(
-      `insert into canjes (cliente_id, tipo, cantidad_descontada, configuracion_recompensa_id, canal) values ($1, $2, $3, $4, 'en_linea')`,
-      [req.cliente.id, "credito_valor_mxn", creditos, config.id]
-    );
-    await query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [req.cliente.id, pesos]);
-    await query(
-      `insert into movimientos_monedero (cliente_id, monto, tipo, detalle) values ($1, $2, 'recompensa', 'Recompensa canjeada')`,
-      [req.cliente.id, pesos]
-    );
+      const { rows: saldoRows } = await client.query(
+        `select creditos_disponibles from saldos_cliente_v where cliente_id = $1`,
+        [req.cliente.id]
+      );
+      const creditos = Number(saldoRows[0]?.creditos_disponibles || 0);
+      if (creditos <= 0) throw badRequest("No tienes créditos disponibles para canjear");
 
-    res.json({ saldo_agregado_mxn: pesos });
+      const pesos = Math.round(creditos * Number(config.valor_cd_mxn) * 100) / 100;
+
+      await client.query(
+        `insert into canjes (cliente_id, tipo, cantidad_descontada, configuracion_recompensa_id, canal) values ($1, $2, $3, $4, 'en_linea')`,
+        [req.cliente.id, "credito_valor_mxn", creditos, config.id]
+      );
+      await client.query(`update clientes set saldo_monedero_mxn = saldo_monedero_mxn + $2 where id = $1`, [req.cliente.id, pesos]);
+      await client.query(
+        `insert into movimientos_monedero (cliente_id, monto, tipo, detalle) values ($1, $2, 'recompensa', 'Recompensa canjeada')`,
+        [req.cliente.id, pesos]
+      );
+
+      await client.query("commit");
+      res.json({ saldo_agregado_mxn: pesos });
+    } catch (err) {
+      await client.query("rollback");
+      throw err;
+    } finally {
+      client.release();
+    }
+  })
+);
+
+// ---------------------------------------------------------------------
+// Eliminación de cuenta (requisito de elegibilidad de Apple/Google: debe
+// poder iniciarse desde dentro de la app) — no se borra la fila de
+// verdad: se anonimiza, para conservar el historial de pedidos/canjes
+// que la referencian, y se revoca el acceso (sesión de Supabase +
+// cualquier JWT propio todavía vigente, vía eliminado_en, ver
+// resolverClienteDesdeToken en middleware/auth.js). El cliente acepta
+// perder cualquier saldo de monedero restante al confirmar — se le
+// avisa desde la app antes de llamar aquí.
+// ---------------------------------------------------------------------
+async function anonimizarCliente(clienteId) {
+  const { rows } = await query(`select auth_user_id from clientes where id = $1 and eliminado_en is null`, [clienteId]);
+  if (!rows[0]) return false;
+
+  const marcador = `eliminado-${clienteId}`;
+  await query(
+    `update clientes set
+       nombre = 'Cuenta eliminada', apellido_paterno = '', apellido_materno = null,
+       telefono = $2, correo = $3, auth_user_id = null,
+       notificaciones_activas = false, eliminado_en = now(), updated_at = now(),
+       qr_secret_version = qr_secret_version + 1
+     where id = $1`,
+    [clienteId, marcador, `${marcador}@eliminado.local`]
+  );
+
+  if (rows[0].auth_user_id) {
+    await supabaseAdmin.auth.admin.deleteUser(rows[0].auth_user_id).catch(() => {});
+  }
+  return true;
+}
+
+clientesRouter.delete(
+  "/me",
+  requireClienteAuth,
+  asyncHandler(async (req, res) => {
+    const borrado = await anonimizarCliente(req.cliente.id);
+    if (!borrado) throw notFound("Cliente no encontrado");
+    res.status(204).send();
+  })
+);
+
+// POST /clientes/solicitar-eliminacion — vía EXTERNA (fuera de la app),
+// que Google Play exige además del borrado de arriba, para quien ya
+// desinstaló la app. Pública, sin sesión: solo con el correo no alcanza
+// para borrar nada, manda un enlace de confirmación de un solo uso.
+// Sirve desde panel/public/eliminar-cuenta.html.
+clientesRouter.post(
+  "/solicitar-eliminacion",
+  forgotPasswordLimiter,
+  asyncHandler(async (req, res) => {
+    const correo = (req.body?.correo || "").trim().toLowerCase();
+    if (!correo) throw badRequest("Falta correo");
+
+    const { rows } = await query(`select id from clientes where correo = $1 and eliminado_en is null`, [correo]);
+    if (rows[0]) {
+      const token = jwt.sign({ sub: rows[0].id, tipo: "eliminacion_externa" }, env.clienteSecret, { expiresIn: "30m" });
+      const enlace = `${env.panelUrl}/confirmar-eliminacion.html?token=${token}`;
+      await enviarCorreo({
+        to: correo,
+        subject: "Confirma la eliminación de tu cuenta — Lealtad Café",
+        text: `Pediste eliminar tu cuenta de Lealtad Café. Este enlace expira en 30 minutos y borra tu cuenta de forma permanente, junto con cualquier saldo a favor que tengas:\n\n${enlace}\n\nSi no fuiste tú, ignora este correo — tu cuenta sigue igual.`,
+      });
+    }
+    // Mismo mensaje exista o no la cuenta — no se revela si un correo está registrado.
+    res.json({ mensaje: "Si existe una cuenta con ese correo, te enviamos instrucciones para confirmar la eliminación." });
+  })
+);
+
+// POST /clientes/confirmar-eliminacion — segundo paso del flujo externo.
+clientesRouter.post(
+  "/confirmar-eliminacion",
+  asyncHandler(async (req, res) => {
+    const { token } = req.body || {};
+    if (!token) throw badRequest("Falta token");
+
+    let payload;
+    try {
+      payload = jwt.verify(token, env.clienteSecret);
+    } catch {
+      throw badRequest("El enlace ya expiró o no es válido — pide que te mandemos uno nuevo");
+    }
+    if (payload.tipo !== "eliminacion_externa") throw badRequest("Token inválido");
+
+    const borrado = await anonimizarCliente(payload.sub);
+    if (!borrado) throw notFound("Esta cuenta ya no existe o ya fue eliminada");
+
+    res.json({ mensaje: "Tu cuenta fue eliminada." });
   })
 );
 

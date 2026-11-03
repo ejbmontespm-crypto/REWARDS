@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Confirmar eliminación · Lealtad Café</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      color: #201e1a; background: #f7f6f4;
+      display: flex; justify-content: center; padding: 48px 20px;
+    }
+    .tarjeta { width: 100%; max-width: 420px; background: #fff; border: 1px solid #e6e2db; border-radius: 10px; padding: 28px 26px; text-align: center; }
+    h1 { font-size: 18px; margin: 0 0 10px; }
+    p { font-size: 13.5px; line-height: 1.55; color: #524c42; margin: 0 0 20px; }
+    button { width: 100%; padding: 11px; font-size: 14px; font-weight: 600; color: #fff; background: #c0392b; border: none; border-radius: 6px; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: default; }
+    .aviso { font-size: 13px; padding: 14px; border-radius: 6px; margin-top: 4px; }
+    .aviso-ok { background: #e9f6ee; color: #1f7a43; }
+    .aviso-error { background: #fbe4e2; color: #b23030; }
+  </style>
+</head>
+<body>
+  <div class="tarjeta" id="tarjeta">
+    <h1>Eliminar tu cuenta</h1>
+    <p id="texto">Esto borra tu información personal de forma permanente, junto con cualquier saldo a favor que tengas. No se puede deshacer.</p>
+    <button id="boton" type="button">Sí, eliminar mi cuenta</button>
+  </div>
+
+  <script>
+    const API_BASE_URL = "https://rewards-production-5ce8.up.railway.app/api";
+
+    const parametros = new URLSearchParams(location.search);
+    const token = parametros.get("token");
+    const tarjeta = document.getElementById("tarjeta");
+    const texto = document.getElementById("texto");
+    const boton = document.getElementById("boton");
+
+    if (!token) {
+      texto.textContent = "Este enlace no es válido. Vuelve a pedir la eliminación desde eliminar-cuenta.html.";
+      boton.remove();
+    }
+
+    boton?.addEventListener("click", async () => {
+      boton.disabled = true;
+      boton.textContent = "Eliminando…";
+
+      try {
+        const respuesta = await fetch(`${API_BASE_URL}/clientes/confirmar-eliminacion`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        const datos = await respuesta.json().catch(() => ({}));
+
+        if (respuesta.ok) {
+          texto.textContent = "";
+          tarjeta.insertAdjacentHTML("beforeend", `<div class="aviso aviso-ok">${datos.mensaje || "Tu cuenta fue eliminada."}</div>`);
+          boton.remove();
+        } else {
+          tarjeta.insertAdjacentHTML(
+            "beforeend",
+            `<div class="aviso aviso-error">${datos?.error?.message || "No se pudo eliminar la cuenta."}</div>`
+          );
+          boton.disabled = false;
+          boton.textContent = "Sí, eliminar mi cuenta";
+        }
+      } catch {
+        tarjeta.insertAdjacentHTML("beforeend", `<div class="aviso aviso-error">No se pudo conectar con el servidor. Intenta de nuevo.</div>`);
+        boton.disabled = false;
+        boton.textContent = "Sí, eliminar mi cuenta";
+      }
+    });
+  </script>
+</body>
+</html>

@@ -71,7 +71,14 @@ async function resolverClienteDesdeToken(token) {
 
   try {
     const payload = jwt.verify(token, env.clienteSecret);
-    if (payload.tipo === "cliente") return payload.sub;
+    if (payload.tipo === "cliente") {
+      // A diferencia del token de Supabase (abajo), este JWT propio dura
+      // hasta 180 días y no se invalida solo — hay que revisar en la base
+      // que la cuenta no haya sido eliminada mientras tanto (ver DELETE
+      // /clientes/me), si no, un token todavía vigente seguiría entrando.
+      const { rows } = await query(`select id from clientes where id = $1 and eliminado_en is null`, [payload.sub]);
+      return rows[0]?.id || null;
+    }
   } catch {
     // no es nuestro JWT — probamos como token real de Supabase Auth
   }
@@ -81,12 +88,12 @@ async function resolverClienteDesdeToken(token) {
     if (error || !data?.user) return null;
 
     const correo = data.user.email?.toLowerCase();
-    let { rows } = await query(`select id from clientes where auth_user_id = $1`, [data.user.id]);
+    let { rows } = await query(`select id from clientes where auth_user_id = $1 and eliminado_en is null`, [data.user.id]);
 
     if (!rows[0] && correo) {
       const enlazado = await query(
         `update clientes set auth_user_id = $1, updated_at = now()
-         where correo = $2 and auth_user_id is null
+         where correo = $2 and auth_user_id is null and eliminado_en is null
          returning id`,
         [data.user.id, correo]
       );

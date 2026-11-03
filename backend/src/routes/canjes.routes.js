@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../config/db.js";
+import { query, getClient } from "../config/db.js";
 import { asyncHandler } from "../lib/asyncHandler.js";
 import { badRequest, notFound, conflict } from "../lib/errors.js";
 import { requireStaffAuth, requireRole } from "../middleware/auth.js";
@@ -85,64 +85,82 @@ canjesRouter.post(
     const { solicitud_id, producto_id } = req.body || {};
     if (!solicitud_id) throw badRequest("Falta solicitud_id");
 
-    const { rows: solRows } = await query(`select * from solicitudes_canje where id = $1`, [solicitud_id]);
-    const solicitud = solRows[0];
-    if (!solicitud) throw notFound("Solicitud no encontrada");
-    if (solicitud.estado !== "pendiente") throw conflict(`Esa solicitud ya está "${solicitud.estado}"`);
+    const client = await getClient();
+    try {
+      await client.query("begin");
 
-    const { rows: configRows } = await query(`select * from configuracion_recompensa where vigente_hasta is null`);
-    const config = configRows[0];
-    if (!config || config.modalidad !== solicitud.tipo) {
-      throw conflict("La regla de recompensa cambió desde que se hizo la solicitud — pide que la vuelva a solicitar");
-    }
+      // Bloquea la solicitud (y la fila del cliente) ANTES de revisar su
+      // estado — sin esto, dos confirmaciones simultáneas (dos miembros de
+      // staff, o un doble tap) pueden pasar ambas la validación "pendiente"
+      // antes de que cualquiera la marque como atendida, redimiendo la
+      // misma recompensa dos veces.
+      const { rows: solRows } = await client.query(`select * from solicitudes_canje where id = $1 for update`, [solicitud_id]);
+      const solicitud = solRows[0];
+      if (!solicitud) throw notFound("Solicitud no encontrada");
+      if (solicitud.estado !== "pendiente") throw conflict(`Esa solicitud ya está "${solicitud.estado}"`);
+      await client.query(`select id from clientes where id = $1 for update`, [solicitud.cliente_id]);
 
-    const { rows: saldoRows } = await query(`select * from saldos_cliente_v where cliente_id = $1`, [solicitud.cliente_id]);
-    const saldo = saldoRows[0] || { creditos_disponibles: 0, visitas_disponibles: 0 };
-
-    let cantidadDescontada = 0;
-    let montoCubierto = null;
-    let diferenciaCaja = null;
-    let productoFinal = producto_id || null;
-
-    if (config.modalidad === "credito_valor_mxn") {
-      if (!producto_id) throw badRequest("Falta producto_id (la bebida que va a pagar con créditos)");
-      const { rows: prodRows } = await query(`select id, nombre, precio from productos where id = $1`, [producto_id]);
-      const producto = prodRows[0];
-      if (!producto) throw notFound("Producto no encontrado");
-
-      const saldoDisponibleMxn = Number(saldo.creditos_disponibles) * Number(config.valor_cd_mxn);
-      montoCubierto = Math.min(Number(producto.precio), saldoDisponibleMxn);
-      diferenciaCaja = Math.round((Number(producto.precio) - montoCubierto) * 100) / 100;
-      cantidadDescontada = Math.round((montoCubierto / Number(config.valor_cd_mxn)) * 100) / 100;
-    } else if (config.modalidad === "credito_umbral") {
-      if (Number(saldo.creditos_disponibles) < Number(config.umbral_cd)) {
-        throw conflict("Ya no tiene suficientes créditos para este canje");
+      const { rows: configRows } = await client.query(`select * from configuracion_recompensa where vigente_hasta is null`);
+      const config = configRows[0];
+      if (!config || config.modalidad !== solicitud.tipo) {
+        throw conflict("La regla de recompensa cambió desde que se hizo la solicitud — pide que la vuelva a solicitar");
       }
-      productoFinal = await validarProductoElegible(producto_id, config.id, "Falta producto_id, o no está en la lista de productos elegibles");
-      cantidadDescontada = Number(config.umbral_cd);
-      diferenciaCaja = 0;
-    } else if (config.modalidad === "visitas") {
-      if (Number(saldo.visitas_disponibles) < Number(config.umbral_visitas)) {
-        throw conflict("Ya no tiene suficientes visitas para este canje");
+
+      const { rows: saldoRows } = await client.query(`select * from saldos_cliente_v where cliente_id = $1`, [solicitud.cliente_id]);
+      const saldo = saldoRows[0] || { creditos_disponibles: 0, visitas_disponibles: 0 };
+
+      let cantidadDescontada = 0;
+      let montoCubierto = null;
+      let diferenciaCaja = null;
+      let productoFinal = producto_id || null;
+
+      if (config.modalidad === "credito_valor_mxn") {
+        if (!producto_id) throw badRequest("Falta producto_id (la bebida que va a pagar con créditos)");
+        const { rows: prodRows } = await client.query(`select id, nombre, precio from productos where id = $1`, [producto_id]);
+        const producto = prodRows[0];
+        if (!producto) throw notFound("Producto no encontrado");
+
+        const saldoDisponibleMxn = Number(saldo.creditos_disponibles) * Number(config.valor_cd_mxn);
+        montoCubierto = Math.min(Number(producto.precio), saldoDisponibleMxn);
+        diferenciaCaja = Math.round((Number(producto.precio) - montoCubierto) * 100) / 100;
+        cantidadDescontada = Math.round((montoCubierto / Number(config.valor_cd_mxn)) * 100) / 100;
+      } else if (config.modalidad === "credito_umbral") {
+        if (Number(saldo.creditos_disponibles) < Number(config.umbral_cd)) {
+          throw conflict("Ya no tiene suficientes créditos para este canje");
+        }
+        productoFinal = await validarProductoElegible(producto_id, config.id, "Falta producto_id, o no está en la lista de productos elegibles");
+        cantidadDescontada = Number(config.umbral_cd);
+        diferenciaCaja = 0;
+      } else if (config.modalidad === "visitas") {
+        if (Number(saldo.visitas_disponibles) < Number(config.umbral_visitas)) {
+          throw conflict("Ya no tiene suficientes visitas para este canje");
+        }
+        productoFinal = await validarProductoElegible(producto_id, config.id, "Falta producto_id, o no está en la lista de productos elegibles");
+        cantidadDescontada = Number(config.umbral_visitas);
+        diferenciaCaja = 0;
       }
-      productoFinal = await validarProductoElegible(producto_id, config.id, "Falta producto_id, o no está en la lista de productos elegibles");
-      cantidadDescontada = Number(config.umbral_visitas);
-      diferenciaCaja = 0;
+
+      const { rows: canjeRows } = await client.query(
+        `insert into canjes (cliente_id, tipo, cantidad_descontada, producto_id, monto_cubierto_mxn, diferencia_pagada_caja, configuracion_recompensa_id, autorizado_por)
+         values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
+        [solicitud.cliente_id, config.modalidad, cantidadDescontada, productoFinal, montoCubierto, diferenciaCaja, config.id, req.staff.id]
+      );
+
+      await client.query(`update solicitudes_canje set estado = 'atendida', atendida_en = now(), canje_id = $2 where id = $1`, [
+        solicitud_id,
+        canjeRows[0].id,
+      ]);
+
+      const { rows: saldoFinal } = await client.query(`select * from saldos_cliente_v where cliente_id = $1`, [solicitud.cliente_id]);
+
+      await client.query("commit");
+      res.status(201).json({ canje: canjeRows[0], saldo: saldoFinal[0] });
+    } catch (err) {
+      await client.query("rollback");
+      throw err;
+    } finally {
+      client.release();
     }
-
-    const { rows: canjeRows } = await query(
-      `insert into canjes (cliente_id, tipo, cantidad_descontada, producto_id, monto_cubierto_mxn, diferencia_pagada_caja, configuracion_recompensa_id, autorizado_por)
-       values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
-      [solicitud.cliente_id, config.modalidad, cantidadDescontada, productoFinal, montoCubierto, diferenciaCaja, config.id, req.staff.id]
-    );
-
-    await query(`update solicitudes_canje set estado = 'atendida', atendida_en = now(), canje_id = $2 where id = $1`, [
-      solicitud_id,
-      canjeRows[0].id,
-    ]);
-
-    const { rows: saldoFinal } = await query(`select * from saldos_cliente_v where cliente_id = $1`, [solicitud.cliente_id]);
-    res.status(201).json({ canje: canjeRows[0], saldo: saldoFinal[0] });
   })
 );
 

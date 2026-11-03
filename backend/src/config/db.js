@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import pg from "pg";
 import { env } from "./env.js";
 
@@ -5,10 +6,29 @@ import { env } from "./env.js";
  * Único punto de acceso a Postgres. Conexión directa (no vía la API
  * REST de Supabase) — ver "Seguridad de acceso" en fase1-esquema-datos.md:
  * este backend es el único que toca las tablas; el resto pasa por aquí.
+ *
+ * TLS: sin DATABASE_CA_CERT_PATH no se valida el certificado del
+ * servidor (vulnerable a MITM en teoría, aunque la conexión sigue
+ * cifrada) — Supabase usa un certificado propio que Node no reconoce
+ * por default, así que exigir rejectUnauthorized sin el CA cert correcto
+ * tumba la conexión entera (confirmado probándolo antes de este cambio).
+ * Para cerrarlo de verdad: Project Settings > Database > SSL Configuration
+ * en el dashboard de Supabase, descargar el certificado, guardarlo donde
+ * sea (ej. backend/certs/supabase-ca.crt) y apuntar DATABASE_CA_CERT_PATH ahí.
  */
+const sslConfig = env.databaseCaCertPath
+  ? { ca: fs.readFileSync(env.databaseCaCertPath, "utf8"), rejectUnauthorized: true }
+  : { rejectUnauthorized: false };
+
+if (!env.databaseCaCertPath) {
+  console.warn(
+    "DATABASE_CA_CERT_PATH no configurado — la conexión a Postgres no valida el certificado del servidor (ver backend/.env.example)."
+  );
+}
+
 export const pool = new pg.Pool({
   connectionString: env.databaseUrl,
-  ssl: { rejectUnauthorized: false },
+  ssl: sslConfig,
 });
 
 pool.on("error", (err) => {

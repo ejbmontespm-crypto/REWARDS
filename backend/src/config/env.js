@@ -32,4 +32,17 @@ export const env = {
   // probar, o se usa un túnel (ngrok) apuntando aquí.
   mercadopagoNotificationUrl: process.env.MERCADOPAGO_NOTIFICATION_URL || null,
   mercadopagoBackUrl: process.env.MERCADOPAGO_BACK_URL || null,
+  // Envío real de correo (Resend) — sin la API key, mailer.js cae a un
+  // stub que solo loguea el envío, para no romper el desarrollo local.
+  resendApiKey: process.env.RESEND_API_KEY || null,
+  resendFromEmail: process.env.RESEND_FROM_EMAIL || "Lealtad Café <notificaciones@resend.dev>",
+  // URL pública del panel — se usa para armar el enlace de confirmación
+  // del borrado de cuenta externo (panel/public/confirmar-eliminacion.html).
+  panelUrl: process.env.PANEL_URL || "http://localhost:4100",
+  // Ruta a un archivo .crt con el CA certificate que publica Supabase
+  // (Project Settings > Database > SSL Configuration) — sin esto, la
+  // conexión a Postgres no valida el certificado del servidor (ver
+  // config/db.js). Se deja opcional a propósito: forzarlo sin el cert
+  // correcto tumba la conexión entera.
+  databaseCaCertPath: process.env.DATABASE_CA_CERT_PATH || null,
 };

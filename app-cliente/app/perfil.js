@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Switch } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Switch, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import { api, ApiError } from "../lib/api";
@@ -30,6 +30,7 @@ export default function Perfil() {
   const [guardando, setGuardando] = useState(false);
   const [cambiandoNotif, setCambiandoNotif] = useState(false);
   const [error, setError] = useState("");
+  const [eliminando, setEliminando] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -91,6 +92,29 @@ export default function Perfil() {
     setActualizandoTema(false);
     setTemaActualizado(true);
     setTimeout(() => setTemaActualizado(false), 2500);
+  }
+
+  function confirmarEliminarCuenta() {
+    const avisoSaldo = saldoMonedero > 0 ? ` Vas a perder tu saldo a favor de $${Number(saldoMonedero).toFixed(0)}.` : "";
+    Alert.alert(
+      "Eliminar tu cuenta",
+      `Esto borra tu información personal de forma permanente y no se puede deshacer.${avisoSaldo}`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Eliminar cuenta", style: "destructive", onPress: eliminarCuenta },
+      ]
+    );
+  }
+
+  async function eliminarCuenta() {
+    setEliminando(true);
+    try {
+      await api.delete("/clientes/me");
+      await cerrarSesion();
+    } catch (err) {
+      setEliminando(false);
+      Alert.alert("No se pudo eliminar tu cuenta", err instanceof ApiError ? err.message : "Intenta de nuevo en unos minutos.");
+    }
   }
 
   if (cargando) {
@@ -219,6 +243,14 @@ export default function Perfil() {
       <Pressable style={estilos.botonCerrarSesion} onPress={cerrarSesion}>
         <Text style={estilos.textoCerrarSesion}>Cerrar sesión</Text>
       </Pressable>
+
+      <Pressable style={estilos.botonEliminarCuenta} onPress={confirmarEliminarCuenta} disabled={eliminando}>
+        {eliminando ? (
+          <ActivityIndicator color={colores.textoMuted} size="small" />
+        ) : (
+          <Text style={estilos.textoEliminarCuenta}>Eliminar cuenta</Text>
+        )}
+      </Pressable>
     </ScrollView>
     </SafeAreaView>
   );
@@ -275,5 +307,7 @@ function crearEstilos(colores) {
     textoActualizarTema: { color: colores.acento, fontWeight: "600", fontSize: 13 },
     botonCerrarSesion: { borderWidth: 1, borderColor: colores.peligro, borderRadius: 10, paddingVertical: 13, alignItems: "center" },
     textoCerrarSesion: { color: colores.peligro, fontWeight: "600", fontSize: 14 },
+    botonEliminarCuenta: { paddingVertical: 10, alignItems: "center" },
+    textoEliminarCuenta: { color: colores.textoMuted, fontWeight: "500", fontSize: 12.5, textDecorationLine: "underline" },
   });
 }
