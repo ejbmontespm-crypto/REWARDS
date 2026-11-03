@@ -1,0 +1,14 @@
+{
+  "name": "Lealtad Café — Panel",
+  "short_name": "Panel Lealtad",
+  "description": "Panel de administración del programa de lealtad D'éclair.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f6f4",
+  "theme_color": "#4338ca",
+  "icons": [
+    { "src": "https://upkwsjiuvwovpltldwxs.supabase.co/storage/v1/object/public/publico/1793217884225-0qpqp4.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "https://upkwsjiuvwovpltldwxs.supabase.co/storage/v1/object/public/publico/1793217884225-0qpqp4.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -128,3 +128,46 @@ table.data .muted { color: #726c60; }
 .login-brand svg { color: #4338ca; }
 .login-brand-text { font-weight: 600; font-size: 15px; }
 .login-title { font-size: 17px; font-weight: 600; margin: 0 0 20px; }
+
+/* -------- responsive (smartphone / tablet) --------
+   Arriba de 860px el sidebar siempre está visible y estos elementos no
+   hacen nada (sidebar-toggle y sidebar-backdrop quedan ocultos). Debajo,
+   el sidebar se vuelve un cajón que se desliza encima del contenido. */
+.sidebar-toggle { display: none; width: 32px; height: 32px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 6px; border: 1px solid #e6e2db; background: #fff; color: #524c42; }
+.sidebar-backdrop { display: none; }
+
+@media (max-width: 860px) {
+  .sidebar-toggle { display: inline-flex; }
+
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 30;
+    transform: translateX(-100%);
+    transition: transform .18s ease;
+    box-shadow: 2px 0 16px rgba(32, 30, 26, 0.18);
+  }
+  .app-shell.sidebar-abierta .sidebar { transform: translateX(0); }
+
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0; z-index: 20;
+    background: rgba(32, 30, 26, 0.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity .18s ease;
+  }
+  .app-shell.sidebar-abierta .sidebar-backdrop { opacity: 1; pointer-events: auto; }
+
+  .header { padding: 0 14px; }
+  .header-title { font-size: 14.5px; }
+  .header-user-name { display: none; }
+  .content { padding: 18px 14px 40px; }
+
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  table.data { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  .login-card { max-width: 92vw; padding: 26px 20px; }
+}
+
+@media (max-width: 440px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .toolbar { flex-wrap: wrap; gap: 10px; }
+}

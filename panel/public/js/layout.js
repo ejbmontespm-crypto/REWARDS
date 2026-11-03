@@ -33,7 +33,8 @@ export function renderShell(rutaActiva, tituloHeader) {
   const app = document.getElementById("app");
 
   app.innerHTML = `
-    <div class="app-shell">
+    <div class="app-shell" id="app-shell">
+      <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
       <div class="sidebar">
         <div class="sidebar-brand">
           ${iconos.menu(22)}
@@ -50,7 +51,10 @@ export function renderShell(rutaActiva, tituloHeader) {
       </div>
       <div class="main">
         <div class="header">
-          <div class="header-title">${tituloHeader}</div>
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <button type="button" class="sidebar-toggle" id="sidebar-toggle" aria-label="Abrir menú">${iconos.hamburguesa(18)}</button>
+            <div class="header-title">${tituloHeader}</div>
+          </div>
           <div class="header-user">
             <div class="avatar">${iniciales(usuario?.nombre_completo)}</div>
             <div>
@@ -68,6 +72,15 @@ export function renderShell(rutaActiva, tituloHeader) {
     cerrarSesion();
     window.location.hash = "#/login";
   });
+
+  // Cajón deslizable en pantallas angostas (ver @media en styles.css) — en
+  // escritorio estos elementos existen igual mas la CSS no les hace nada.
+  const shell = document.getElementById("app-shell");
+  const abrirCajon = () => shell.classList.add("sidebar-abierta");
+  const cerrarCajon = () => shell.classList.remove("sidebar-abierta");
+  document.getElementById("sidebar-toggle").addEventListener("click", abrirCajon);
+  document.getElementById("sidebar-backdrop").addEventListener("click", cerrarCajon);
+  document.getElementById("nav").addEventListener("click", cerrarCajon);
 
   return document.getElementById("content");
 }
